@@ -6,19 +6,19 @@ import {
   serializeRequest,
   SerializedResponse,
   isRunningInServiceWorker,
-  getBundledWorkerFileName,
   MessagePortToReadableStream,
 } from "./common";
 
 const log = debug("fakettp:sw");
+const address = {
+  host: "localhost",
+  port: "8080",
+};
 
 function shouldProxyUrl(url: URL) {
-  return (
-    self.location.origin === url.origin &&
-    self.location.pathname !== url.pathname &&
-    url.pathname !== "/" &&
-    url.pathname !== `/${getBundledWorkerFileName()}`
-  );
+  const should = (url.hostname === address.host && url.port) || "80" === address.port;
+  log("should proxy url: %s, %s, %o", url.href, should, address);
+  return should;
 }
 
 export function createProxyClient() {
@@ -68,26 +68,36 @@ export function createProxyClient() {
       })
     );
   });
-  scope.addEventListener("message", (event: MessageEvent<SerializedResponse | typeof ARM | typeof FIN>) => {
-    if (event.data === ARM) {
-      log("arming");
-      armed = true;
-      return;
+  scope.addEventListener(
+    "message",
+    (event: MessageEvent<SerializedResponse | typeof ARM | typeof FIN | [string, number]>) => {
+      if (event.data === ARM) {
+        log("arming");
+        armed = true;
+        return;
+      }
+      if (event.data === FIN) {
+        log("disarming");
+        armed = false;
+        return;
+      }
+      if (Array.isArray(event.data)) {
+        const [host, port] = event.data;
+        log("setting address: %s:%d", host, port);
+        address.host = host;
+        address.port = port.toString();
+        return;
+      }
+      const { data: responseInit } = event;
+      const responseId = responseInit.id;
+      if (messageListeners.has(responseId)) {
+        const messageListener = messageListeners.get(responseId);
+        messageListener(event as MessageEvent<SerializedResponse>);
+      } else {
+        log("message event: %d, no listener found", responseId);
+      }
     }
-    if (event.data === FIN) {
-      log("disarming");
-      armed = false;
-      return;
-    }
-    const { data: responseInit } = event;
-    const responseId = responseInit.id;
-    if (messageListeners.has(responseId)) {
-      const messageListener = messageListeners.get(responseId);
-      messageListener(event as MessageEvent<SerializedResponse>);
-    } else {
-      log("message event: %d, no listener found", responseId);
-    }
-  });
+  );
   scope.addEventListener("activate", function () {
     log("activating");
     return scope.clients.claim();

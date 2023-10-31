@@ -178,6 +178,8 @@ class IncomingMessage extends Readable {
 
 class Server extends EventEmitter {
   private static _registration: ServiceWorkerRegistration | null = null;
+  private _host = self.location.hostname;
+  private _port = +self.location.port;
   constructor() {
     log("creating fakettp server");
     assert(isRunningInMainThread(), "fakettp: Server must be created in main thread.");
@@ -186,16 +188,30 @@ class Server extends EventEmitter {
   }
   address() {
     return {
-      address: self.location.hostname,
-      port: self.location.port,
-      family: "IPv4",
+      get address() {
+        return this._host;
+      },
+      get port() {
+        return this._port;
+      },
+      get family() {
+        return "IPv4";
+      },
     };
   }
   get listening() {
     return !!Server._registration;
   }
   listen(...args: any[]) {
-    const callback = args.pop() as (error?: Error) => void;
+    if (typeof args[0] === "number") {
+      this._port = args[0];
+      if (typeof args[1] === "string") {
+        this._host = args[1];
+      }
+    }
+    log("listening on address: %o", this.address());
+    const _last = args.pop();
+    const callback = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
     if (Server._registration) {
       log("already listening");
       const error = new Error("Already listening.");
@@ -216,7 +232,7 @@ class Server extends EventEmitter {
       navigator.serviceWorker.ready.then((registration) => {
         Server._registration = registration;
         log("service worker ready");
-        arm();
+        arm(this._host, this._port);
         callback?.();
         let proxy = true;
         this.emit("listening");
@@ -296,8 +312,9 @@ function disarm() {
   });
 }
 
-function arm() {
+function arm(host: string, port: number) {
   navigator.serviceWorker.getRegistration(getBundledWorkerFileName()).then((registration) => {
+    registration?.active?.postMessage([host, port]);
     registration?.active?.postMessage(ARM);
   });
 }

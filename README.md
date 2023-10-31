@@ -107,6 +107,7 @@ this is what is known to work good enough for most use cases:
   - Event: `'request'`
   - `server.close([callback])`
   - `server.listen()`
+  - `server.listen(port[, host][, callback])`
   - `server.listening`
 - Class: `http.ServerResponse`
   - Event: `'close'`

@@ -96,3 +96,66 @@ postData({ answer: "browser" }).then((data) => {
 - Run `npx http-serve --cors dist` to run production build.
 
 in dev modes, verbose logging is enabled. in production, it is disabled.
+
+# status
+
+this is what is known to work good enough for most use cases:
+
+- Class: `http.Server`
+  - Event: `'close'`
+  - Event: `'connection'`
+  - Event: `'request'`
+  - `server.close([callback])`
+  - `server.listen()`
+  - `server.listening`
+- Class: `http.ServerResponse`
+  - Event: `'close'`
+  - Event: `'finish'`
+  - `response.end([data][, encoding][, callback])`
+  - `response.finished`
+  - `response.getHeader(name)`
+  - `response.getHeaderNames()`
+  - `response.getHeaders()`
+  - `response.hasHeader(name)`
+  - `response.headersSent`
+  - `response.removeHeader(name)`
+  - `response.setHeader(name, value)`
+  - `response.socket`
+  - `response.statusCode`
+  - `response.statusMessage`
+  - `response.write(chunk[, encoding][, callback])`
+  - `response.writeHead(statusCode[, statusMessage][, `headers])
+- Class: `http.IncomingMessage`
+  - Event: `'close'`
+  - `message.complete`
+  - `message.destroy([error])`
+  - `message.headers`
+  - `message.httpVersion`
+  - `message.method`
+  - `message.rawHeaders`
+  - `message.socket`
+  - `message.statusCode`
+  - `message.statusMessage`
+  - `message.url`
+- `http.STATUS_CODES` through [http-browserify][1]
+- `http.createServer([options][, requestListener])`
+- `http.get(options[, callback])` through [http-browserify][1]
+- `http.get(url[, options][, callback])` through [http-browserify][1]
+- `http.request(options[, callback])` through [http-browserify][1]
+- `http.request(url[, options][, callback])` through [http-browserify][1]
+- Class: `net.Socket`
+  - Event: `'close'`
+  - Event: `'data'`
+  - Event: `'drain'`
+  - Event: `'end'`
+  - Event: `'error'`
+  - `socket.address()`
+  - `socket.bufferSize`
+  - `socket.bytesRead`
+  - `socket.bytesWritten`
+  - `socket.destroy([exception])`
+  - `socket.destroyed`
+  - `socket.end([data][, encoding][, callback])`
+  - `socket.write(data[, encoding][, callback])`
+
+[1]: https://www.npmjs.com/package/http-browserify

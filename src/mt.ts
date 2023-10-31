@@ -191,6 +191,9 @@ class Server extends EventEmitter {
       family: "IPv4",
     };
   }
+  get listening() {
+    return !!Server._registration;
+  }
   listen(...args: any[]) {
     const callback = args.pop() as (error?: Error) => void;
     if (Server._registration) {
@@ -202,9 +205,8 @@ class Server extends EventEmitter {
       log("starting to believe...");
       navigator.serviceWorker
         .register(getBundledWorkerFileName())
-        .then((registration) => {
+        .then(() => {
           log("service worker registered");
-          Server._registration = registration;
         })
         .catch((error) => {
           log("service worker registration failed");
@@ -212,6 +214,7 @@ class Server extends EventEmitter {
           callback?.(error);
         });
       navigator.serviceWorker.ready.then((registration) => {
+        Server._registration = registration;
         log("service worker ready");
         arm();
         callback?.();

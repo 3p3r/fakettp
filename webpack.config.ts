@@ -73,6 +73,7 @@ const CONFIG: webpack.Configuration = {
   resolve: {
     extensions: [".ts", ".js"],
     fallback: {
+      util: require.resolve("util/"),
       events: require.resolve("events/"),
       buffer: require.resolve("buffer/"),
       stream: require.resolve("stream-browserify"),

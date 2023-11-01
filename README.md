@@ -33,7 +33,7 @@ this is a library primarily intended for use in bundlers like webpack.
 example use case would be running an express app or socket io app locally.
 
 a single global variable `FAKETTP` is exposed which partially implements socket,
-net.stream, and net.server, and net.http interfaces from node.
+net.stream, and net.server, and http interfaces from node.
 
 it currently implements enough to run most express and socket io apps untouched.
 socket io needs to be tuned in client side to use polling and not web sockets.
@@ -45,10 +45,10 @@ fakettp is built into a UMD module, so it can be used in bundlers or browsers.
 
 ![demo](./ext/demo.png)
 
-You can create a server and listen like so:
+you can create a server and listen like so:
 
 ```js
-FAKETTP.createServer().on("request", (req, res) => {
+const server = FAKETTP.createServer().on("request", (req, res) => {
   req.on('data', (chunk) => {
     console.log(`Received ${chunk.length} bytes of data in request body.`);
     console.log(`Request chunk: ${chunk.toString()}`);
@@ -58,19 +58,18 @@ FAKETTP.createServer().on("request", (req, res) => {
   });
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('{"yo":"nice"}');
-}).listen();
+}).listen(443, "google.com");
 ```
 
 ![listen](./ext/listen.png)
 
-After that all requests will be intercepted and handled by the service worker.
-Only requests to the same origin will be intercepted (excluding worker itself).
-The HTML page loading the worker is also excluded from interception.
+after that all requests will be intercepted and handled by the service worker.
+the host and port to watch for can be configured by passing options to `listen`.
 
-You can for example send a request to the server like so:
+you can for example send a request to the server like so:
 
 ```js
-async function postData(data = {}, url = "test.html") {
+async function postData(data = {}, url = "https://google.com/fake.html") {
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -88,12 +87,22 @@ postData({ answer: "browser" }).then((data) => {
 
 ![response](./ext/response.png)
 
+you can also close the server like so:
+
+```js
+server.close();
+```
+
+and if you attempt to send a request after that, you will get an error:
+
+![close](./ext/close.png)
+
 # development
 
-- Run `npm run build` to build the project.
-- Run `npm run serve` to start webpack dev server.
-- Run `npm run watch` to watch for changes and rebuild.
-- Run `npx http-serve --cors dist` to run production build.
+- `npm run build` to build the project.
+- `npm run serve` to start webpack dev server.
+- `npm run watch` to watch for changes and rebuild.
+- `npx http-serve --cors dist` to run production build.
 
 in dev modes, verbose logging is enabled. in production, it is disabled.
 
@@ -101,6 +110,12 @@ in dev modes, verbose logging is enabled. in production, it is disabled.
 
 this is what is known to work good enough for most use cases:
 
+- `http.createServer([options][, requestListener])` one instance per page
+- `http.STATUS_CODES` through [http-browserify][1]
+- `http.get(options[, callback])` through [http-browserify][1]
+- `http.get(url[, options][, callback])` through [http-browserify][1]
+- `http.request(options[, callback])` through [http-browserify][1]
+- `http.request(url[, options][, callback])` through [http-browserify][1]
 - Class: `http.Server`
   - Event: `'close'`
   - Event: `'connection'`
@@ -138,12 +153,6 @@ this is what is known to work good enough for most use cases:
   - `message.statusCode`
   - `message.statusMessage`
   - `message.url`
-- `http.STATUS_CODES` through [http-browserify][1]
-- `http.createServer([options][, requestListener])`
-- `http.get(options[, callback])` through [http-browserify][1]
-- `http.get(url[, options][, callback])` through [http-browserify][1]
-- `http.request(options[, callback])` through [http-browserify][1]
-- `http.request(url[, options][, callback])` through [http-browserify][1]
 - Class: `net.Socket`
   - Event: `'close'`
   - Event: `'data'`

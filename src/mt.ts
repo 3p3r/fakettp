@@ -177,10 +177,10 @@ class IncomingMessage extends Readable {
 }
 
 class Server extends EventEmitter {
-  private static _registration: ServiceWorkerRegistration | null = null;
+  static registrations: ServiceWorkerRegistration[] = [];
   private _host = self.location.hostname;
   private _port = +self.location.port;
-  constructor() {
+  constructor(private readonly _addresses: Map<string, string> = new Map()) {
     log("creating fakettp server");
     assert(isRunningInMainThread(), "fakettp: Server must be created in main thread.");
     assert("serviceWorker" in navigator, "fakettp: ServiceWorkers are not supported.");
@@ -200,7 +200,7 @@ class Server extends EventEmitter {
     };
   }
   get listening() {
-    return !!Server._registration;
+    return Server.registrations.length > 0;
   }
   listen(...args: any[]) {
     if (typeof args[0] === "number") {
@@ -212,7 +212,7 @@ class Server extends EventEmitter {
     log("listening on address: %o", this.address());
     const _last = args.pop();
     const callback = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
-    if (Server._registration) {
+    if (Server.registrations.length > 0) {
       log("already listening");
       const error = new Error("Already listening.");
       this.emit("error", error);
@@ -221,8 +221,9 @@ class Server extends EventEmitter {
       log("starting to believe...");
       navigator.serviceWorker
         .register(getBundledWorkerFileName())
-        .then(() => {
+        .then((registration) => {
           log("service worker registered");
+          Server.registrations.push(registration);
         })
         .catch((error) => {
           log("service worker registration failed");
@@ -230,9 +231,9 @@ class Server extends EventEmitter {
           callback?.(error);
         });
       navigator.serviceWorker.ready.then((registration) => {
-        Server._registration = registration;
+        Server.registrations.push(registration);
         log("service worker ready");
-        arm(this._host, this._port);
+        arm(this._host, this._port, this._addresses);
         callback?.();
         let proxy = true;
         this.emit("listening");
@@ -283,25 +284,13 @@ class Server extends EventEmitter {
   }
   close(callback?: (error?: Error) => void) {
     disarm();
-    if (!Server._registration) {
-      const error = new Error("Not listening.");
-      this.emit("error", error);
-      callback?.(error);
-    } else {
-      Server._registration
-        ?.unregister()
-        .then(() => callback?.())
-        .finally(() => {
-          Server._registration = null;
-          this.emit("close");
-        });
-    }
+    setTimeout(callback, 0);
     return this;
   }
 }
 
-export function createProxyServer(requestListener?: RequestListener): Server {
-  const server = new Server();
+export function createProxyServer(requestListener?: RequestListener, addresses?: Map<string, string>): Server {
+  const server = new Server(addresses);
   if (requestListener) server.on("request", requestListener);
   return server;
 }
@@ -310,11 +299,16 @@ function disarm() {
   navigator.serviceWorker.getRegistration(getBundledWorkerFileName()).then((registration) => {
     registration?.active?.postMessage(FIN);
   });
+  for (const registration of Server.registrations) {
+    registration.unregister();
+  }
+  Server.registrations.length = 0;
 }
 
-function arm(host: string, port: number) {
+function arm(host: string, port: number, addresses: Map<string, string>) {
   navigator.serviceWorker.getRegistration(getBundledWorkerFileName()).then((registration) => {
-    registration?.active?.postMessage([host, port]);
+    addresses.set(host, port.toString());
+    registration?.active?.postMessage(addresses);
     registration?.active?.postMessage(ARM);
   });
 }

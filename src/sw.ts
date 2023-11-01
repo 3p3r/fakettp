@@ -6,18 +6,30 @@ import {
   serializeRequest,
   SerializedResponse,
   isRunningInServiceWorker,
+  getBundledWorkerFileName,
   MessagePortToReadableStream,
 } from "./common";
 
 const log = debug("fakettp:sw");
-const address = {
-  host: "localhost",
-  port: "8080",
-};
+const addresses = new Map<string, string>();
+addresses.set("localhost", "8080");
+addresses.set("127.0.0.1", "8080");
+
+function normalizedPort(url: URL) {
+  return url.port || url.protocol === "https:" ? "443" : "80";
+}
+
+function isMe(url: URL) {
+  return (
+    addresses.has(url.hostname) &&
+    addresses.get(url.hostname) === normalizedPort(url) &&
+    url.pathname?.includes(getBundledWorkerFileName())
+  );
+}
 
 function shouldProxyUrl(url: URL) {
-  const should = (url.hostname === address.host && url.port) || "80" === address.port;
-  log("should proxy url: %s, %s, %o", url.href, should, address);
+  const should = addresses.has(url.hostname) && normalizedPort(url) === addresses.get(url.hostname) && !isMe(url);
+  log("should proxy url: %s, %s, %o", url.href, should);
   return should;
 }
 
@@ -27,10 +39,14 @@ export function createProxyClient() {
   assert(isRunningInServiceWorker());
   const scope = self as unknown as ServiceWorkerGlobalScope;
   const messageListeners = new Map<number, (event: MessageEvent<SerializedResponse>) => void>();
-  scope.addEventListener("fetch", (ev: FetchEvent) => {
+  function hook(ev: FetchEvent) {
     log("fetch event: %s", ev.request.url);
     if (!armed) {
       log("unarmed, letting browser handle request: %s", ev.request.url);
+      return;
+    }
+    if (ev.request.bodyUsed) {
+      log("request already handled by a redundant sw instance: %s", ev.request.url);
       return;
     }
     ev.respondWith(
@@ -67,10 +83,11 @@ export function createProxyClient() {
           .catch(reject);
       })
     );
-  });
+  }
+  self.addEventListener("fetch", hook);
   scope.addEventListener(
     "message",
-    (event: MessageEvent<SerializedResponse | typeof ARM | typeof FIN | [string, number]>) => {
+    (event: MessageEvent<SerializedResponse | typeof ARM | typeof FIN | Map<string, string>>) => {
       if (event.data === ARM) {
         log("arming");
         armed = true;
@@ -78,14 +95,17 @@ export function createProxyClient() {
       }
       if (event.data === FIN) {
         log("disarming");
+        self.removeEventListener("message", hook);
         armed = false;
         return;
       }
-      if (Array.isArray(event.data)) {
-        const [host, port] = event.data;
-        log("setting address: %s:%d", host, port);
-        address.host = host;
-        address.port = port.toString();
+      if (event.data instanceof Map) {
+        log("clearing default addresses");
+        addresses.clear();
+        for (const [host, port] of event.data) {
+          log("setting address: %s:%d", host, port);
+          addresses.set(host, port.toString());
+        }
         return;
       }
       const { data: responseInit } = event;

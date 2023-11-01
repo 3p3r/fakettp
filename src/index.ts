@@ -30,8 +30,9 @@ class FakeTTP {
   }
   readonly createServer = isRunningInMainThread()
     ? (...args: any[]) => {
-        const requestListener = args.pop() as RequestListener;
-        return createProxyServer(requestListener);
+        const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
+        const addresses = args.find((arg) => typeof arg === "object")?.["addresses"];
+        return createProxyServer(requestListener, addresses);
       }
     : undefined;
 }

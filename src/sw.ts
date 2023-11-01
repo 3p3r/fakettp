@@ -1,8 +1,8 @@
 import debug from "debug";
+import assert from "assert";
 import {
   ARM,
   FIN,
-  assert,
   serializeRequest,
   SerializedResponse,
   isRunningInServiceWorker,
@@ -20,16 +20,12 @@ function normalizedPort(url: URL) {
 }
 
 function isMe(url: URL) {
-  return (
-    addresses.has(url.hostname) &&
-    addresses.get(url.hostname) === normalizedPort(url) &&
-    url.pathname?.includes(getBundledWorkerFileName())
-  );
+  return self.location.origin === url.origin && self.location.pathname?.includes(getBundledWorkerFileName());
 }
 
 function shouldProxyUrl(url: URL) {
   const should = addresses.has(url.hostname) && normalizedPort(url) === addresses.get(url.hostname) && !isMe(url);
-  log("should proxy url: %s, %s, %o", url.href, should);
+  log("should proxy url: %s: %s", url.href, should);
   return should;
 }
 

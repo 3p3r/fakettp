@@ -1,11 +1,11 @@
 import debug from "debug";
+import assert from "assert";
 import { EventEmitter } from "events";
 import type { RequestListener } from "http";
 import { Writable, Duplex, Readable } from "stream";
 import {
   ARM,
   FIN,
-  assert,
   uniqueId,
   SerializedRequest,
   SerializedResponse,
@@ -15,6 +15,7 @@ import {
 } from "./common";
 
 const nosup = (..._unused: any[]) => assert(false, "fakettp: not supported.");
+const canRequestHaveBody = (method: string) => method !== "GET" && method !== "HEAD";
 
 const log = debug("fakettp:mt");
 
@@ -29,16 +30,16 @@ class Socket extends Duplex {
   setNoDelay = nosup;
   setKeepAlive = nosup;
   readonly id = uniqueId();
-  constructor(public readonly ports: SocketPorts) {
+  constructor(readonly incomingRequest: Request, public readonly ports: SocketPorts) {
     super();
     log("creating socket: %d", this.id);
     ports.responsePort.start();
     ports.requestPort?.start();
-    if (this.ports.requestPort) {
+    if (this.ports.requestPort && canRequestHaveBody(incomingRequest.method)) {
       this.ports.requestPort.onmessage = (event: MessageEvent<ArrayBufferView | typeof FIN>) => {
         if (event.data === FIN) {
           log("request port received FIN: %d", this.id);
-          this.emit("req:end");
+          this.push(null);
         } else {
           log("request port received data: %d", this.id);
           this.push(event.data);
@@ -53,33 +54,44 @@ class Socket extends Duplex {
     callback?.(error);
   }
   _write(data: any, encoding?: BufferEncoding, callback?: (error?: Error) => void): void {
-    log("writing to socket: %d", this.id);
+    log("writing to socket: %d with encoding", this.id, encoding);
     assert("buffer" in data);
     this.ports.responsePort.postMessage(data, [data.buffer]);
     callback?.();
   }
   _read(size: number): void {
-    log("reading from socket: %d", this.id);
-    this.ports.requestPort?.postMessage(size);
+    if (canRequestHaveBody(this.incomingRequest.method)) {
+      log("reading from socket: %d", this.id);
+      this.ports.requestPort?.postMessage(size);
+    } else {
+      log("socket cannot have more data: %d", this.id);
+      this.push(null);
+    }
   }
 }
 
-class ServerResponse extends Writable {
-  statusCode = 418;
+export class ServerResponse extends Writable {
+  finished = false;
+  statusCode = 200;
   headersSent = false;
-  statusMessage = "I'm a teapot";
+  statusMessage = "OK";
   private readonly _headers = new Headers();
   sendDate = nosup;
   setTimeout = nosup;
   addTrailers = nosup;
   writeContinue = nosup;
-  constructor(public readonly socket: Socket) {
+  constructor(readonly incomingRequest: Request, public readonly socket: Socket) {
     super();
+    this.once("finish", () => {
+      log("server response finished");
+      this.finished = true;
+    });
   }
   _final(callback: (error?: Error) => void): void {
     log("finalizing server response");
-    this.socket.write(FIN, callback);
-    this.socket.end(callback);
+    this.socket.write(FIN, () => {
+      this.socket.end(callback);
+    });
   }
   _write(chunk: any, encoding: BufferEncoding, callback: (error?: Error) => void): void {
     log("writing to server response");
@@ -124,30 +136,47 @@ class ServerResponse extends Writable {
       this._headers.delete(name);
     }
   }
+  get remoteAddress() {
+    const _url = new URL(this.incomingRequest.url);
+    return _url.hostname;
+  }
+  get remoteFamily() {
+    return "IPv4";
+  }
+  get remotePort() {
+    const _url = new URL(this.incomingRequest.url);
+    return _url.port || _url.protocol === "https:" ? "443" : "80";
+  }
 }
 
-class IncomingMessage extends Readable {
+export class IncomingMessage extends Readable {
+  complete = false;
   setTimeout = nosup;
   constructor(readonly incomingRequest: Request, readonly socket: Socket) {
     super();
+    this.complete = !canRequestHaveBody(incomingRequest.method);
+    this.socket.once("end", () => {
+      log("incoming message completed");
+      this.complete = true;
+      this.push(null);
+    });
     this.socket.on("data", (chunk: any) => {
       log("data received in incoming message from socket: %d", this.socket.id);
       this.push(chunk);
     });
   }
   _read(size: number): void {
-    log("incoming message needs data: %d", this.socket.id);
-    this.socket.read(size);
+    if (this.complete) {
+      log("incoming message does not have data: %d", this.socket.id);
+      return;
+    } else {
+      log("incoming message needs data: %d", this.socket.id);
+      this.socket.read(size);
+    }
   }
-  get httpVersion() {
-    return "1.1";
-  }
-  get trailers() {
-    return {};
-  }
-  get rawTrailers() {
-    return {};
-  }
+  readonly httpVersion = "1.1";
+  readonly trailers = {};
+  readonly rawTrailers = {};
   get headers() {
     const headers: Record<string, string> = {};
     this.incomingRequest.headers.forEach((value, key) => {
@@ -166,14 +195,14 @@ class IncomingMessage extends Readable {
     return this.incomingRequest.method;
   }
   get url() {
-    return this.incomingRequest.url;
+    const _url = new URL(this.incomingRequest.url);
+    return `${_url.pathname}${_url.search}${_url.hash}`;
   }
-  get statusCode() {
-    return 200;
+  get connection() {
+    return this.socket;
   }
-  get statusMessage() {
-    return "OK";
-  }
+  readonly statusCode = 200;
+  readonly statusMessage = "OK";
 }
 
 class Server extends EventEmitter {
@@ -187,21 +216,34 @@ class Server extends EventEmitter {
     super();
   }
   address() {
+    const { _host, _port } = this;
     return {
       get address() {
-        return this._host;
+        return _host;
       },
       get port() {
-        return this._port;
+        return _port;
       },
       get family() {
         return "IPv4";
+      },
+      toString() {
+        return `${this.address}:${this.port}`;
       },
     };
   }
   get listening() {
     return Server.registrations.length > 0;
   }
+  listen(port?: number, hostname?: string, listeningListener?: () => void): this;
+  listen(port?: number, listeningListener?: () => void): this;
+  listen(
+    options: {
+      port?: number | undefined;
+      host?: string | undefined;
+    },
+    listeningListener?: () => void
+  ): this;
   listen(...args: any[]) {
     if (typeof args[0] === "number") {
       this._port = args[0];
@@ -209,14 +251,19 @@ class Server extends EventEmitter {
         this._host = args[1];
       }
     }
+    if (typeof args[0] === "object") {
+      this._port = args[0].port || this._port;
+      this._host = args[0].host || this._host;
+    }
     log("listening on address: %o", this.address());
     const _last = args.pop();
-    const callback = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
+    const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
+    this.once("error", _done);
+    this.once("listening", _done);
     if (Server.registrations.length > 0) {
       log("already listening");
       const error = new Error("Already listening.");
       this.emit("error", error);
-      callback?.(error);
     } else {
       log("starting to believe...");
       navigator.serviceWorker
@@ -228,15 +275,14 @@ class Server extends EventEmitter {
         .catch((error) => {
           log("service worker registration failed");
           this.emit("error", error);
-          callback?.(error);
         });
       navigator.serviceWorker.ready.then((registration) => {
         Server.registrations.push(registration);
         log("service worker ready");
         arm(this._host, this._port, this._addresses);
-        callback?.();
         let proxy = true;
-        this.emit("listening");
+        const fixBrowsersThatLackCorrectTiming = 100;
+        setTimeout(() => this.emit("listening"), fixBrowsersThatLackCorrectTiming);
         this.once("close", () => {
           log("closing service worker");
           registration.unregister();
@@ -248,35 +294,39 @@ class Server extends EventEmitter {
           const responsePort = responseChannel.port1;
           const requestPort = event.ports[0];
           const request = deserializeRequest(event.data);
-          const socket = new Socket({ responsePort, requestPort });
+          const socket = new Socket(request, { responsePort, requestPort });
           this.emit("connection", socket);
           const message = new IncomingMessage(request, socket);
-          const response = new ServerResponse(socket);
-          socket.once("req:end", () => {
+          const response = new ServerResponse(request, socket);
+          const _wrapUp = () => {
+            if (response.headersSent) return;
             log("closing request stream");
-            message.destroy();
-            message.emit("end");
+            response.headersSent = true;
+            log("responding to service worker");
+            event.source.postMessage(
+              {
+                id: request.id,
+                status: response.statusCode,
+                statusText: response.statusMessage,
+                headers: response.getHeaders(),
+                proxy,
+              } as SerializedResponse,
+              {
+                transfer: [responseChannel.port2],
+                targetOrigin: event.origin,
+              }
+            );
+          };
+          response.once("finish", () => {
+            if (message.complete) _wrapUp();
+            else message.once("end", _wrapUp);
           });
           if (this.listenerCount("request") === 0) {
+            response.writeHead(418, "I'm a teapot");
             response.end();
           } else {
             this.emit("request", message, response);
           }
-          response.headersSent = true;
-          log("responding to service worker");
-          event.source.postMessage(
-            {
-              id: request.id,
-              status: response.statusCode,
-              statusText: response.statusMessage,
-              headers: response.getHeaders(),
-              proxy,
-            } as SerializedResponse,
-            {
-              transfer: [responseChannel.port2],
-              targetOrigin: event.origin,
-            }
-          );
         });
       });
     }
@@ -284,7 +334,7 @@ class Server extends EventEmitter {
   }
   close(callback?: (error?: Error) => void) {
     disarm();
-    setTimeout(callback, 0);
+    callback?.();
     return this;
   }
 }
@@ -296,6 +346,7 @@ export function createProxyServer(requestListener?: RequestListener, addresses?:
 }
 
 function disarm() {
+  log("disarming service worker");
   navigator.serviceWorker.getRegistration(getBundledWorkerFileName()).then((registration) => {
     registration?.active?.postMessage(FIN);
   });
@@ -306,6 +357,7 @@ function disarm() {
 }
 
 function arm(host: string, port: number, addresses: Map<string, string>) {
+  log("arming service worker");
   navigator.serviceWorker.getRegistration(getBundledWorkerFileName()).then((registration) => {
     addresses.set(host, port.toString());
     registration?.active?.postMessage(addresses);

@@ -1,18 +1,22 @@
+import fs from "fs";
 import path from "path";
 import webpack, { ProvidePlugin } from "webpack";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 import CopyWebpackPlugin from "copy-webpack-plugin";
+import TerserWebpackPlugin from "terser-webpack-plugin";
+import WebpackShellPlugin from "webpack-shell-plugin-next";
 
 import "webpack-dev-server";
 
 const DIST = path.resolve(__dirname, "dist");
 
-const CONFIG: webpack.Configuration = {
+const mainConfig: webpack.Configuration = {
   target: "web",
   entry: "./src/index.ts",
   mode: "production",
   output: {
     path: DIST,
+    clean: true,
     filename: "fakettp.js",
     libraryTarget: "umd",
     umdNamedDefine: true,
@@ -29,9 +33,6 @@ const CONFIG: webpack.Configuration = {
     static: DIST,
   },
   plugins: [
-    new HtmlWebpackPlugin({
-      template: "./src/index.ejs",
-    }),
     new ProvidePlugin({
       process: "process/browser",
     }),
@@ -45,8 +46,8 @@ const CONFIG: webpack.Configuration = {
             delete pkg.private;
             delete pkg.scripts;
             delete pkg.devDependencies;
-            pkg.main = CONFIG.output!.filename;
-            pkg.files = ["fakettp.js", "README.md", "LICENSE"];
+            pkg.main = "build/index.js";
+            pkg.files = ["LICENSE", "README.md", mainConfig.output?.filename, "build"];
             return JSON.stringify(pkg, null, 2);
           },
         },
@@ -82,19 +83,156 @@ const CONFIG: webpack.Configuration = {
   performance: {
     hints: false,
   },
+  optimization: {
+    minimizer: [
+      new TerserWebpackPlugin({
+        extractComments: false,
+        terserOptions: {
+          format: {
+            comments: false,
+          },
+        },
+      }),
+    ],
+  },
 };
 
-CONFIG.plugins?.push(
+mainConfig.plugins?.push(
   new webpack.DefinePlugin({
-    "process.env.WEBPACK_MODE": JSON.stringify(CONFIG.mode),
-    "process.env.WEBPACK_FILENAME": JSON.stringify(CONFIG.output?.filename),
+    "process.env.WEBPACK_MODE": JSON.stringify(mainConfig.mode),
+    "process.env.WEBPACK_FILENAME": JSON.stringify(mainConfig.output?.filename),
   })
 );
 
-if (CONFIG.mode === "development") {
-  CONFIG.devtool = "inline-source-map";
+if (mainConfig.mode === "development") {
+  mainConfig.devtool = "inline-source-map";
 } else {
-  CONFIG.devtool = false;
+  mainConfig.devtool = false;
 }
 
-export default CONFIG;
+function createConfigForExample(name: string) {
+  const _name = `sample-${name}`;
+  const config: webpack.Configuration = {
+    mode: mainConfig.mode,
+    target: "web",
+    devtool: false,
+    entry: `./ext/samples/${name}.ts`,
+    output: {
+      path: DIST,
+      filename: `${_name}.js`,
+    },
+    module: {
+      rules: [
+        {
+          test: /\/ws\//,
+          loader: "null-loader",
+          include: /node_modules/,
+        },
+        {
+          test: /\.(ts|tsx)$/i,
+          loader: "ts-loader",
+          exclude: ["/node_modules/"],
+        },
+      ],
+    },
+    resolve: {
+      extensions: [".ts", ".js"],
+      fallback: {
+        http: require.resolve("./src/index.ts"),
+        fs: require.resolve("memfs"),
+        net: require.resolve("net-browserify"),
+        path: require.resolve("path-browserify"),
+        util: require.resolve("util/"),
+        events: require.resolve("events/"),
+        buffer: require.resolve("buffer/"),
+        stream: require.resolve("stream-browserify"),
+        assert: require.resolve("assert/"),
+        zlib: require.resolve("browserify-zlib"),
+        crypto: require.resolve("crypto-browserify"),
+        timers: require.resolve("./ext/timers.ts"),
+        querystring: require.resolve("querystring-es3"),
+        async_hooks: false,
+        https: false,
+        tls: false,
+      },
+    },
+    plugins: [
+      new webpack.ProvidePlugin({
+        clearImmediate: ["timers-browserify", "clearImmediate"],
+        setImmediate: ["timers-browserify", "setImmediate"],
+        process: "process/browser",
+        Buffer: ["buffer", "Buffer"],
+        url: ["url", "URL"],
+      }),
+      new HtmlWebpackPlugin({
+        filename: `${_name}.html`,
+        templateContent: makeTemplateContent(_name),
+      }),
+    ],
+    ignoreWarnings: [{ module: /express\/lib\/view\.js/, message: /Critical dependency/ }],
+    performance: {
+      hints: false,
+    },
+  };
+  return config;
+}
+
+function makeTemplateContent(name: string) {
+  return `\
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${name} - fakettp samples</title>
+    <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon" />
+  </head>
+  <body>
+    <h1>${name} (fakettp demo)</h1>
+  </body>
+</html>\n`;
+}
+
+function makeTemplateIndexContent(...names: string[]) {
+  return `\
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>fakettp</title>
+    <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon" />
+    <script src="fakettp.js"></script>
+  </head>
+  <body>
+    <h1>fakettp</h1>
+    <p>Examples:</p>
+    <ul>
+${names.map((name) => `      <li><a href="sample-${name}.html">${name}</a></li>`).join("\n")}
+    </ul>
+  </body>
+</html>\n`;
+}
+
+function createConfigForExamples(...names: string[]) {
+  const configs: webpack.Configuration[] = [];
+  for (const name of names) {
+    configs.push(createConfigForExample(name));
+  }
+  mainConfig.plugins?.push(
+    new WebpackShellPlugin({
+      safe: true,
+      onAfterDone: {
+        blocking: false,
+        parallel: true,
+        scripts: [
+          "npx tsc",
+          async function () {
+            await fs.promises.writeFile(path.resolve(DIST, "index.html"), makeTemplateIndexContent(...names));
+          },
+        ],
+      },
+    })
+  );
+  return configs;
+}
+
+export default [mainConfig, ...createConfigForExamples("express", "express-static", "socket-io")];

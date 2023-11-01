@@ -1,0 +1,25 @@
+name: Build And Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+      - name: update chrome
+        run: |
+          sudo ln -sf $(which chrome) /opt/google/chrome/chrome
+      - uses: bahmutov/npm-install@v1
+      - name: Clean
+        run: git clean -xdf -e node_modules
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm run test

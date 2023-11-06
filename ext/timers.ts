@@ -1,16 +1,15 @@
 // @ts-ignore
 import { setTimeout, clearTimeout, setInterval, clearImmediate } from "timers-browserify";
 function _setTimeout(cb: (...args: any[]) => void, ms: number, ...args: any[]) {
-  let ret = setTimeout(cb, ms, ...args);
-  const refresh = () => {
-    clearTimeout(ret);
+  let ret: any = null;
+  const _reusableTimer = () => {
+    if (ret !== null) clearTimeout(ret);
     ret = setTimeout(cb, ms, ...args);
-    // @ts-ignore
-    ret.refresh = refresh;
-    return ret;
+    return Object.defineProperty(ret, "refresh", {
+      enumerable: false,
+      value: _reusableTimer,
+    });
   };
-  // @ts-ignore
-  ret.refresh = refresh;
-  return ret;
+  return _reusableTimer();
 }
 export { _setTimeout as setTimeout, clearTimeout, setInterval, clearImmediate };

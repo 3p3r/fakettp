@@ -1,13 +1,14 @@
 # fakettp
 
-fake browser side http server via service workers with node api compatibility.
+sandbox node core http module in a service worker.
 
 - [disclaimer](#disclaimer)
 - [motivation](#motivation)
 - [usage](#usage)
 - [demo](#demo)
 - [development](#development)
-- [status](#status)
+- [compatibility](#compatibility)
+- [limitations](#limitations)
 
 ## disclaimer
 
@@ -17,6 +18,9 @@ fake browser side http server via service workers with node api compatibility.
 > **I do not take any responsibility for any damages caused by this software.**
 > proceed at your own risk. absolutely no warranty is provided. you may brick
 > your browser if you do not know how to use this library properly.
+
+if you are new, it is not all hopeless. make sure you understand the intricacies
+of [service workers][2] and its security implications before using this library.
 
 ## motivation
 
@@ -33,7 +37,7 @@ local and does not involve any network adapter (including loopback).
 
 ## usage
 
-this library is designed to be used in a bundler like [Webpack](webpack.js.org).
+this library is designed to be used in a bundler like [webpack](webpack.js.org).
 fakettp is a drop in replacement for node's http module. two requirements should
 be met to use it in a bundler successfully:
 
@@ -137,7 +141,7 @@ and if you attempt to send a request after that, you will get an error:
 - `npm run watch` to watch for changes and rebuild.
 - `npx http-serve --cors dist` to run production build.
 
-## status
+## compatibility
 
 working samples:
 
@@ -147,7 +151,7 @@ working samples:
 
 this is what is known to work good enough for most use cases:
 
-- `http.createServer([options][, requestListener])` one instance per page
+- `http.createServer([options][, requestListener])` *one instance per session*
 - `http.METHODS` through [stream-http][1]
 - `http.STATUS_CODES` through [stream-http][1]
 - `http.get(options[, callback])` through [stream-http][1]
@@ -211,4 +215,14 @@ this is what is known to work good enough for most use cases:
   - `socket.end([data][, encoding][, callback])`
   - `socket.write(data[, encoding][, callback])`
 
+## limitations
+
+- fakettp cannot be hosted on a cdn and must be served from the same origin.
+- fakettp works best in chromium based browsers due to support discrepancies.
+- fakettp only works in secure contexts and localhost for development purposes.
+- fakettp does not support history navigations that result in crossing origins.
+- fakettp listening on root domain is not advised due to history complications.
+- fakettp can currently have only one instance active and listening at a time.
+
 [1]: https://www.npmjs.com/package/stream-http
+[2]: https://www.chromium.org/Home/chromium-security/security-faq/service-worker-security-faq/

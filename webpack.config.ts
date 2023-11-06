@@ -170,9 +170,8 @@ function createConfigForExample(name: string) {
       }),
     ],
     ignoreWarnings: [{ module: /express\/lib\/view\.js/, message: /Critical dependency/ }],
-    performance: {
-      hints: false,
-    },
+    performance: mainConfig.performance,
+    optimization: mainConfig.optimization,
   };
   return config;
 }
@@ -204,6 +203,7 @@ function makeTemplateIndexContent(...names: string[]) {
   </head>
   <body>
     <h1>fakettp</h1>
+    <h2 style="color:red">for best results, view this page in Chrome and in incognito mode.</h2>
     <p>Examples:</p>
     <ul>
 ${names.map((name) => `      <li><a href="sample-${name}.html">${name}</a></li>`).join("\n")}

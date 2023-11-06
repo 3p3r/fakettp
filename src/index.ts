@@ -2,7 +2,7 @@ import debug from "debug";
 
 import { createProxyClient } from "./sw";
 import { createProxyServer, IncomingMessage, ServerResponse } from "./mt";
-import { isRunningInMainThread, isRunningInServiceWorker } from "./common";
+import { isRunningInBrowserWindow, isRunningInServiceWorker } from "./common";
 
 import type { RequestListener } from "http";
 
@@ -24,11 +24,11 @@ const http = {
   ..._http,
   ServerResponse,
   IncomingMessage,
-  createServer: isRunningInMainThread()
+  createServer: isRunningInBrowserWindow()
     ? (...args: any[]) => {
         const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
-        const addresses = args.find((arg) => typeof arg === "object")?.["addresses"];
-        return createProxyServer(requestListener, addresses);
+        const scope: string | undefined = args.find((arg) => typeof arg === "object")?.["scope"];
+        return createProxyServer(requestListener, scope);
       }
     : undefined,
   __esModule: true,

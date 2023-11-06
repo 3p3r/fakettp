@@ -1,3 +1,4 @@
+import cors from "cors";
 import express from "express";
 import { createServer } from "http";
 import * as SocketClient from "socket.io-client";
@@ -5,6 +6,8 @@ import { Server as SocketServer } from "socket.io";
 
 const app = express();
 const httpServer = createServer(app);
+
+app.use(cors());
 
 const ioServer = new SocketServer(httpServer, {
   transports: ["polling"],
@@ -35,5 +38,6 @@ function createSocket(name: string) {
   });
   socket.onAny((event, ...args) => {
     console.log(`${name} received event: ${event}`, args);
+    document.write(`${name} received event: ${JSON.stringify(event)}<br />`);
   });
 }

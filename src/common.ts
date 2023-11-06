@@ -1,3 +1,5 @@
+declare const globalThis: ServiceWorkerGlobalScope | Window;
+
 import debug from "debug";
 
 const log = debug("fakettp:sw");
@@ -9,12 +11,12 @@ export function getBundledWorkerFileName() {
   return process.env.WEBPACK_FILENAME || "fakettp.js";
 }
 
-export function isRunningInMainThread() {
-  return typeof window !== "undefined" && window === self;
+export function isRunningInBrowserWindow() {
+  return typeof window !== "undefined" && window === globalThis;
 }
 
 export function isRunningInServiceWorker() {
-  return typeof self !== "undefined" && "ServiceWorkerGlobalScope" in self;
+  return typeof globalThis !== "undefined" && "ServiceWorkerGlobalScope" in globalThis;
 }
 
 export type StringOrBuffer = string | ArrayBufferView;
@@ -81,7 +83,7 @@ export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffe
   return channel.port2;
 }
 
-export type SerializedResponse = ResponseInit & { id: number; proxy: boolean };
+export type SerializedResponse = ResponseInit & { id: number };
 export type SerializedRequest = ReturnType<typeof serializeRequest>;
 
 export function serializeRequest(request: Request) {
@@ -140,7 +142,7 @@ export function deserializeRequest(request: SerializedRequest): Request & { id?:
   if (method) requestInit.method = method;
   if (headers) requestInit.headers = new Headers(headers);
   if (body) requestInit.body = MessagePortToReadableStream(body);
-  if (mode) requestInit.mode = mode;
+  if (mode) requestInit.mode = mode === "navigate" ? undefined : mode;
   if (credentials) requestInit.credentials = credentials;
   if (cache) requestInit.cache = cache;
   if (redirect) requestInit.redirect = redirect;
@@ -151,4 +153,58 @@ export function deserializeRequest(request: SerializedRequest): Request & { id?:
   const ret = new Request(url, requestInit);
   if (id !== undefined) Object.assign(ret, { id });
   return ret;
+}
+
+export function normalizedPort(url: URL) {
+  return url.port !== "" ? url.port : url.protocol === "https:" ? "443" : "80";
+}
+
+function _defaultHost() {
+  const _url = new URL(globalThis.location.href);
+  return _url.hostname;
+}
+
+function _defaultPort() {
+  const _url = new URL(globalThis.location.href);
+  return normalizedPort(_url);
+}
+
+export const defaultPort = _defaultPort();
+export const defaultHost = _defaultHost();
+
+interface ProxyInstanceEventTargetSW {
+  readonly sw: ServiceWorkerGlobalScope;
+  readonly mt: Promise<Client | null>;
+  readonly listeners: Map<number, (event: MessageEvent<SerializedResponse>) => void>;
+  host: string;
+  port: string;
+}
+
+interface ProxyInstanceEventTargetMT {
+  readonly sw: Promise<ServiceWorker | null>;
+  readonly mt: Window;
+}
+
+type ProxyInstanceEventClients<T extends ServiceWorkerGlobalScope | Window> = T extends ServiceWorkerGlobalScope
+  ? ProxyInstanceEventTargetSW
+  : ProxyInstanceEventTargetMT;
+
+interface ProxyInstanceCommon<T extends ServiceWorkerGlobalScope | Window> {
+  readonly armed: boolean;
+  arm(scope?: string): Promise<void>;
+  disarm(): Promise<void>;
+}
+
+type ProxyInstance<T extends ServiceWorkerGlobalScope | Window> = ProxyInstanceCommon<T> & ProxyInstanceEventClients<T>;
+
+export type ProxyWindowInstance = ProxyInstance<Window>;
+export type ProxyWorkerInstance = ProxyInstance<ServiceWorkerGlobalScope>;
+
+export class Singleton<T> {
+  private instance: T | null = null;
+  constructor(private readonly factory: () => T) {}
+  get get() {
+    if (this.instance === null) this.instance = this.factory();
+    return this.instance;
+  }
 }

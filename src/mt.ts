@@ -104,6 +104,16 @@ export class ServerResponse extends Writable {
     log("writing to server response");
     this.socket.write(chunk, encoding, callback);
   }
+  // https://github.com/expressjs/session/pull/908/files
+  get _header() {
+    log("deprecated _header for server response");
+    return !!this.headersSent;
+  }
+  // https://github.com/expressjs/session/pull/908/files
+  _implicitHeader() {
+    log("deprecated _implicitHeader for server response");
+    this.writeHead(this.statusCode, this.statusMessage, this.getHeaders());
+  }
   writeHead(statusCode: number, statusMessage?: string, headers?: Record<string, string>) {
     log("writing head to server response");
     this.statusCode = statusCode;
@@ -263,7 +273,7 @@ class Server extends EventEmitter {
     }
     log("listening on address: %o", this.address());
     const _last = args.pop();
-    const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
+    const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => { };
     this.once("error", _done);
     this.once("listening", _done);
     if (proxyInstance.get.armed) {
@@ -392,9 +402,9 @@ function createProxyInstance(): ProxyWindowInstance {
 
 const proxyInstance = isRunningInBrowserWindow()
   ? new Singleton(() => {
-      const proxyInstance = createProxyInstance();
-      return proxyInstance;
-    })
+    const proxyInstance = createProxyInstance();
+    return proxyInstance;
+  })
   : null;
 
 proxyInstance?.get.disarm();

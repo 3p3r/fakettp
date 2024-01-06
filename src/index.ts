@@ -26,10 +26,10 @@ const http = {
   IncomingMessage,
   createServer: isRunningInBrowserWindow()
     ? (...args: any[]) => {
-        const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
-        const scope: string | undefined = args.find((arg) => typeof arg === "object")?.["scope"];
-        return createProxyServer(requestListener, scope);
-      }
+      const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
+      const scope: string | undefined = args.find((arg) => typeof arg === "object")?.["scope"];
+      return createProxyServer(requestListener, scope);
+    }
     : undefined,
   __esModule: true,
 };

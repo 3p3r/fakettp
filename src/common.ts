@@ -83,7 +83,7 @@ export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffe
   return channel.port2;
 }
 
-export type SerializedResponse = ResponseInit & { id: number };
+export type SerializedResponse = ResponseInit & { id: number; };
 export type SerializedRequest = ReturnType<typeof serializeRequest>;
 
 export function serializeRequest(request: Request) {
@@ -121,7 +121,7 @@ export function serializeRequest(request: Request) {
   };
 }
 
-export function deserializeRequest(request: SerializedRequest): Request & { id?: number } {
+export function deserializeRequest(request: SerializedRequest): Request & { id?: number; } {
   const {
     id,
     url,
@@ -202,7 +202,7 @@ export type ProxyWorkerInstance = ProxyInstance<ServiceWorkerGlobalScope>;
 
 export class Singleton<T> {
   private instance: T | null = null;
-  constructor(private readonly factory: () => T) {}
+  constructor(private readonly factory: () => T) { }
   get get() {
     if (this.instance === null) this.instance = this.factory();
     return this.instance;

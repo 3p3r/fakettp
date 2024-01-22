@@ -48,7 +48,7 @@ function onFetch(this: ProxyWorkerInstance, ev: FetchEvent) {
         .then(async (mt) => {
           log("processing fetch event: %s", ev.request.url);
           const requestUrl = new URL(ev.request.url);
-          const forceProxy = requestUrl.searchParams.get("fakettp") === "force";
+          const forceProxy = true; // requestUrl.searchParams.get("fakettp") === "force";
           if (
             !forceProxy &&
             !isMe(requestUrl) &&
@@ -93,7 +93,7 @@ function onFetch(this: ProxyWorkerInstance, ev: FetchEvent) {
                 this.listeners.delete(requestId);
                 resolve(fetch(ev.request));
               }
-            }, 100);
+            }, 30000);
           }
         })
         .catch(reject);

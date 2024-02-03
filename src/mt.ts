@@ -37,6 +37,10 @@ class Socket extends Duplex {
   setNoDelay = nosup;
   setKeepAlive = nosup;
   readonly id = uniqueId();
+  readonly remoteAddress: string;
+  readonly remoteFamily: string;
+  readonly remotePort: string;
+
   constructor(readonly incomingRequest: Request, public readonly ports: SocketPorts) {
     super();
     log("creating socket: %d", this.id);
@@ -53,6 +57,20 @@ class Socket extends Duplex {
         }
       };
     }
+    this.remoteAddress = this._getRemoteAddress();
+    this.remoteFamily = this._getRemoteFamily();
+    this.remotePort = this._getRemotePort();
+  }
+  private _getRemoteAddress() {
+    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
+    return _url.hostname;
+  }
+  private _getRemoteFamily() {
+    return "IPv4";
+  }
+  private _getRemotePort() {
+    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
+    return normalizedPort(_url);
   }
   _destroy(error?: Error, callback?: (error?: Error) => void): void {
     log("destroying socket: %d", this.id);
@@ -87,12 +105,18 @@ export class ServerResponse extends Writable {
   setTimeout = nosup;
   addTrailers = nosup;
   writeContinue = nosup;
+  readonly remoteAddress: string;
+  readonly remoteFamily: string;
+  readonly remotePort: string;
   constructor(readonly incomingRequest: Request, public readonly socket: Socket) {
     super();
     this.once("finish", () => {
       log("server response finished");
       this.finished = true;
     });
+    this.remoteAddress = this._getRemoteAddress();
+    this.remoteFamily = this._getRemoteFamily();
+    this.remotePort = this._getRemotePort();
   }
   _final(callback: (error?: Error) => void): void {
     log("finalizing server response");
@@ -153,20 +177,25 @@ export class ServerResponse extends Writable {
       this._headers.delete(name);
     }
   }
-  get remoteAddress() {
-    const _url = new URL(this.incomingRequest.url);
+  private _getRemoteAddress() {
+    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
     return _url.hostname;
   }
-  get remoteFamily() {
+  private _getRemoteFamily() {
     return "IPv4";
   }
-  get remotePort() {
-    const _url = new URL(this.incomingRequest.url);
+  private _getRemotePort() {
+    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
     return normalizedPort(_url);
   }
 }
 
 export class IncomingMessage extends Readable {
+  readonly headers: Record<string, string>;
+  readonly rawHeaders: Record<string, string>;
+  readonly method: string;
+  readonly url: string;
+  readonly connection: Socket;
   complete = false;
   setTimeout = nosup;
   constructor(readonly incomingRequest: Request, readonly socket: Socket) {
@@ -181,6 +210,11 @@ export class IncomingMessage extends Readable {
       log("data received in incoming message from socket: %d", this.socket.id);
       this.push(chunk);
     });
+    this.headers = this._getHeaders();
+    this.rawHeaders = this._getRawHeaders();
+    this.method = this._getMethod();
+    this.url = this._getUrl();
+    this.connection = this._getConnection();
   }
   _read(size: number): void {
     if (this.complete) {
@@ -194,28 +228,29 @@ export class IncomingMessage extends Readable {
   readonly httpVersion = "1.1";
   readonly trailers = {};
   readonly rawTrailers = {};
-  get headers() {
+
+  private _getHeaders() {
     const headers: Record<string, string> = {};
     this.incomingRequest.headers.forEach((value, key) => {
       headers[key.toLowerCase()] = value;
     });
     return headers;
   }
-  get rawHeaders() {
+  private _getRawHeaders() {
     const headers: Record<string, string> = {};
     this.incomingRequest.headers.forEach((value, key) => {
       headers[key] = value;
     });
     return headers;
   }
-  get method() {
+  private _getMethod() {
     return this.incomingRequest.method;
   }
-  get url() {
+  private _getUrl() {
     const _url = new URL(this.incomingRequest.url);
     return `${_url.pathname}${_url.search}${_url.hash}`;
   }
-  get connection() {
+  private _getConnection() {
     return this.socket;
   }
   readonly statusCode = 200;

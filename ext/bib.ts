@@ -42,7 +42,6 @@ export async function createBib(initialUrl: string) {
   document.body.appendChild(bib);
   async function navigateTo(address: string) {
     const _url = new URL(initialUrl);
-    _url.searchParams.set("fakettp", "force");
     frame.src = _url.href;
     url.value = address;
   }

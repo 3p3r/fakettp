@@ -7,7 +7,6 @@ import {
   FIN,
   defaultHost,
   defaultPort,
-  normalizedPort,
   serializeRequest,
   SerializedResponse,
   type ProxyWorkerInstance,
@@ -48,23 +47,6 @@ function onFetch(this: ProxyWorkerInstance, ev: FetchEvent) {
         .then(async (mt) => {
           log("processing fetch event: %s", ev.request.url);
           const requestUrl = new URL(ev.request.url);
-          const forceProxy = true; // requestUrl.searchParams.get("fakettp") === "force";
-          if (
-            !forceProxy &&
-            !isMe(requestUrl) &&
-            !(this.armed && this.host === requestUrl.hostname && normalizedPort(requestUrl) === this.port)
-          ) {
-            log("letting browser handle request: %s", ev.request.url);
-            return resolve(fetch(ev.request));
-          }
-          if (requestUrl.host === globalThis.location.host) {
-            const client = await globalThis.clients.get(ev.clientId);
-            if (!forceProxy && client?.id === mt?.id) {
-              log("refusing to proxy same host request: %s", ev.request.url);
-              log("trace this request in code and move it to an iframe or add ?fakettp=force to the url");
-              return resolve(fetch(ev.request));
-            }
-          }
           const requestSerialized = serializeRequest(ev.request);
           const requestId = requestSerialized.id;
           log("fetch event: %s, id: %d", ev.request.url, requestId);

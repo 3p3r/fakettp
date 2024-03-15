@@ -47,7 +47,7 @@ function onFetch(this: ProxyWorkerInstance, ev: FetchEvent) {
         .then(async (mt) => {
           log("processing fetch event: %s", ev.request.url);
           const requestUrl = new URL(ev.request.url);
-          const requestSerialized = serializeRequest(ev.request);
+          const requestSerialized = await serializeRequest(ev.request);
           const requestId = requestSerialized.id;
           log("fetch event: %s, id: %d", ev.request.url, requestId);
           let timer: NodeJS.Timeout | null = null;

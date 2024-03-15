@@ -83,10 +83,19 @@ export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffe
   return channel.port2;
 }
 
-export type SerializedResponse = ResponseInit & { id: number; };
-export type SerializedRequest = ReturnType<typeof serializeRequest>;
+export async function RequestBodyToReadableStream(request: Request): Promise<ReadableStream> {
+  if (request.body) return request.body;
+  return (await Promise.all([
+    request.clone().blob().then((b) => b && b.stream()),
+    request.clone().text().then((t) => t && (new Blob([t], { type: 'text/plain' })).stream()),
+    request.clone().arrayBuffer().then((b) => b && (new Blob([b], { type: 'application/octet-stream' })).stream()),
+  ])).filter(Boolean)?.[0];
+}
 
-export function serializeRequest(request: Request) {
+export type SerializedResponse = ResponseInit & { id: number; };
+export type SerializedRequest = Awaited<ReturnType<typeof serializeRequest>>;
+
+export async function serializeRequest(request: Request) {
   const id = uniqueId();
   log("serializing request: %d", id);
   const url = request.url;
@@ -96,7 +105,7 @@ export function serializeRequest(request: Request) {
     headers[key] = value;
   });
   const mode = request.mode;
-  const body = method === "GET" || method === "HEAD" ? null : ReadableStreamToMessagePort(request.body);
+  const body = method === "GET" || method === "HEAD" ? null : ReadableStreamToMessagePort(await RequestBodyToReadableStream(request));
   const credentials = request.credentials;
   const cache = request.cache;
   const redirect = request.redirect;

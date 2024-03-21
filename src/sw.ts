@@ -154,7 +154,9 @@ function createProxyInstance(): ProxyWorkerInstance {
       log("getting mt");
       mt = globalThis.clients
         .matchAll({ type: "window" })
-        .then((clients) => clients.find((client) => client.frameType === "top-level"));
+        .then((clients) => ({ clients, candidate: clients.find((client) => client.frameType === "top-level") }))
+        .then(({ clients, candidate }) => ((candidate && candidate.postMessage) ? candidate : clients.find((client) => client.frameType === "nested")));
+      log("mt: %o", mt);
       return mt;
     },
     async arm() {

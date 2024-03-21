@@ -27,8 +27,7 @@ const http = {
   createServer: isRunningInBrowserWindow()
     ? (...args: any[]) => {
       const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
-      const scope: string | undefined = args.find((arg) => typeof arg === "object")?.["scope"];
-      return createProxyServer(requestListener, scope);
+      return createProxyServer(requestListener);
     }
     : undefined,
   __esModule: true,

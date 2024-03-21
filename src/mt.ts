@@ -260,7 +260,7 @@ export class IncomingMessage extends Readable {
 class Server extends EventEmitter {
   private _host = defaultHost;
   private _port = +defaultPort;
-  constructor(readonly scope: string = "/") {
+  constructor() {
     log("creating fakettp server");
     assert(isRunningInBrowserWindow(), "fakettp: Server must be created in main thread.");
     assert("serviceWorker" in navigator, "fakettp: ServiceWorkers are not supported.");
@@ -319,7 +319,7 @@ class Server extends EventEmitter {
       log("starting to believe...");
       proxyInstance.get
         .disarm()
-        .then(() => proxyInstance.get.arm(this.scope))
+        .then(() => proxyInstance.get.arm())
         .then(() => proxyInstance.get.sw)
         .then((sw) => {
           log("service worker ready");
@@ -407,9 +407,9 @@ function createProxyInstance(): ProxyWindowInstance {
       });
       return sw;
     },
-    async arm(scope?: string) {
+    async arm() {
       if (armed) return;
-      await navigator.serviceWorker.register(getBundledWorkerFileName(), { scope });
+      await navigator.serviceWorker.register(getBundledWorkerFileName());
       const sw = await this.sw;
       sw.postMessage(ARM);
       armed = true;
@@ -444,8 +444,8 @@ const proxyInstance = isRunningInBrowserWindow()
 
 proxyInstance?.get.disarm();
 
-export function createProxyServer(requestListener?: RequestListener, scope?: string): Server {
-  const server = new Server(scope);
+export function createProxyServer(requestListener?: RequestListener): Server {
+  const server = new Server();
   if (requestListener) server.on("request", requestListener);
   return server;
 }

@@ -200,7 +200,7 @@ type ProxyInstanceEventClients<T extends ServiceWorkerGlobalScope | Window> = T 
 
 interface ProxyInstanceCommon<T extends ServiceWorkerGlobalScope | Window> {
   readonly armed: boolean;
-  arm(scope?: string): Promise<void>;
+  arm(): Promise<void>;
   disarm(): Promise<void>;
 }
 

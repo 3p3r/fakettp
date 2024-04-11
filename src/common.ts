@@ -5,7 +5,6 @@ import debug from "debug";
 const log = debug("fakettp:sw");
 
 export const FIN = "\x00" as const;
-export const ARM = "\x01" as const;
 
 export function getBundledWorkerFileName() {
   return process.env.WEBPACK_FILENAME || "fakettp.js";

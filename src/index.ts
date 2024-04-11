@@ -1,8 +1,8 @@
 import debug from "debug";
 
 import { createProxyClient } from "./sw";
-import { createProxyServer, IncomingMessage, ServerResponse } from "./mt";
 import { isRunningInBrowserWindow, isRunningInServiceWorker } from "./common";
+import { createProxyServer, IncomingMessage, ServerResponse, unload } from "./mt";
 
 import type { RequestListener } from "http";
 
@@ -22,6 +22,7 @@ if (isRunningInServiceWorker()) createProxyClient();
 
 const http = {
   ..._http,
+  unload,
   ServerResponse,
   IncomingMessage,
   createServer: isRunningInBrowserWindow()

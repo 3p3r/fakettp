@@ -47,7 +47,7 @@ const mainConfig: webpack.Configuration = {
             delete pkg.scripts;
             delete pkg.devDependencies;
             pkg.main = "build/index.js";
-            pkg.files = ["LICENSE", "README.md", mainConfig.output?.filename, "build"];
+            pkg.files = ["LICENSE", "README.md", mainConfig.output?.filename, noswConfig.output?.filename, "build"];
             return JSON.stringify(pkg, null, 2);
           },
         },
@@ -99,8 +99,8 @@ const mainConfig: webpack.Configuration = {
 
 mainConfig.plugins?.push(
   new webpack.DefinePlugin({
-    "process.env.WEBPACK_MODE": JSON.stringify(mainConfig.mode),
-    "process.env.WEBPACK_FILENAME": JSON.stringify(mainConfig.output?.filename),
+    "process.env.FAKETTP_MODE": JSON.stringify(mainConfig.mode),
+    "process.env.FAKETTP_MAIN": JSON.stringify(mainConfig.output?.filename),
   })
 );
 
@@ -176,6 +176,28 @@ function createConfigForExample(name: string) {
   return config;
 }
 
+const noswConfig: webpack.Configuration = {
+  target: "web",
+  entry: "./src/nosw.ts",
+  mode: "production",
+  output: {
+    path: DIST,
+    filename: "nosw.js",
+  },
+  module: {
+    rules: [
+      {
+        test: /\.(ts|tsx)$/i,
+        loader: "ts-loader",
+        exclude: ["/node_modules/"],
+      },
+    ],
+  },
+  resolve: {
+    extensions: [".ts", ".js"],
+  },
+};
+
 function makeTemplateContent(name: string) {
   return `\
 <!DOCTYPE html>
@@ -217,6 +239,7 @@ function createConfigForExamples(...names: string[]) {
   for (const name of names) {
     configs.push(createConfigForExample(name));
   }
+  if (mainConfig.output) mainConfig.output.clean = false;
   mainConfig.plugins?.push(
     new WebpackShellPlugin({
       safe: true,
@@ -235,4 +258,4 @@ function createConfigForExamples(...names: string[]) {
   return configs;
 }
 
-export default [mainConfig, ...createConfigForExamples("express", "express-static", "socket-io")];
+export default [mainConfig, noswConfig, ...createConfigForExamples("express", "express-static", "socket-io")];

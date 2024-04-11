@@ -6,7 +6,6 @@ import { EventEmitter } from "events";
 import type { RequestListener } from "http";
 import { Writable, Duplex, Readable } from "stream";
 import {
-  ARM,
   FIN,
   uniqueId,
   Singleton,
@@ -308,7 +307,7 @@ class Server extends EventEmitter {
     }
     log("listening on address: %o", this.address());
     const _last = args.pop();
-    const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => { };
+    const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
     this.once("error", _done);
     this.once("listening", _done);
     if (proxyInstance.get.armed) {
@@ -318,67 +317,64 @@ class Server extends EventEmitter {
     } else {
       log("starting to believe...");
       proxyInstance.get
-        .disarm()
-        .then(() => proxyInstance.get.arm())
-        .then(() => proxyInstance.get.sw)
-        .then((sw) => {
+        .arm()
+        .then(async () => {
+          while (true) {
+            try {
+              const response = await fetch(`/__status__`);
+              if (response.status === 200) break;
+            } catch (error) {
+              log("error fetching /__status__: %o", error);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        })
+        .then(() => {
           log("service worker ready");
-          sw.postMessage([this._host, this._port.toString()]);
           this.once("close", () => {
             log("closing service worker");
             proxyInstance.get.disarm();
           });
-          navigator.serviceWorker.addEventListener(
-            "message",
-            (event: MessageEvent<SerializedRequest | typeof ARM | typeof FIN>) => {
-              if (event.data === ARM) {
-                log("message received from service worker: ARM");
-                this.emit("listening");
-                return;
-              }
-              if (event.data === FIN) {
-                log("message received from service worker: FIN");
-                return;
-              }
-              log("message received from service worker");
-              const responseChannel = new MessageChannel();
-              const responsePort = responseChannel.port1;
-              const requestPort = event.ports[0];
-              const request = deserializeRequest(event.data);
-              const socket = new Socket(request, { responsePort, requestPort });
-              this.emit("connection", socket);
-              const message = new IncomingMessage(request, socket);
-              const response = new ServerResponse(request, socket);
-              const _wrapUp = () => {
-                if (response.headersSent) return;
-                log("closing request stream");
-                response.headersSent = true;
-                log("responding to service worker");
-                event.source.postMessage(
-                  {
-                    id: request.id,
-                    status: response.statusCode,
-                    statusText: response.statusMessage,
-                    headers: response.getHeaders(),
-                  } as SerializedResponse,
-                  {
-                    transfer: [responseChannel.port2],
-                    targetOrigin: event.origin,
-                  }
-                );
-              };
-              response.once("finish", () => {
-                if (message.complete) _wrapUp();
-                else message.once("end", _wrapUp);
-              });
-              if (this.listenerCount("request") === 0) {
-                response.writeHead(418, "I'm a teapot");
-                response.end();
-              } else {
-                this.emit("request", message, response);
-              }
+          this.emit("listening");
+          navigator.serviceWorker.addEventListener("message", (event: MessageEvent<SerializedRequest>) => {
+            log("message received from service worker");
+            const responseChannel = new MessageChannel();
+            const responsePort = responseChannel.port1;
+            const requestPort = event.ports[0];
+            const request = deserializeRequest(event.data);
+            const socket = new Socket(request, { responsePort, requestPort });
+            this.emit("connection", socket);
+            const message = new IncomingMessage(request, socket);
+            const response = new ServerResponse(request, socket);
+            const _wrapUp = () => {
+              if (response.headersSent) return;
+              log("closing request stream");
+              response.headersSent = true;
+              log("responding to service worker");
+              event.source.postMessage(
+                {
+                  id: request.id,
+                  status: response.statusCode,
+                  statusText: response.statusMessage,
+                  headers: response.getHeaders(),
+                } as SerializedResponse,
+                {
+                  transfer: [responseChannel.port2],
+                  targetOrigin: event.origin,
+                }
+              );
+            };
+            response.once("finish", () => {
+              if (message.complete) _wrapUp();
+              else message.once("end", _wrapUp);
+            });
+            if (this.listenerCount("request") === 0) {
+              response.writeHead(418, "I'm a teapot");
+              response.end();
+            } else {
+              this.emit("request", message, response);
             }
-          );
+          });
         });
     }
     return this;
@@ -386,63 +382,42 @@ class Server extends EventEmitter {
   close(callback?: (error?: Error) => void) {
     proxyInstance.get
       .disarm()
-      .then(() => callback?.())
+      .then(() => callback?.(undefined))
       .catch(callback);
     return this;
   }
 }
 
 function createProxyInstance(): ProxyWindowInstance {
-  let armed = false;
-  let sw: Promise<ServiceWorker | null> = null;
   return {
     get armed() {
-      return armed;
+      return false;
     },
     mt: globalThis,
     get sw() {
-      if (sw) return sw;
-      sw = navigator.serviceWorker.ready.then((registration) => {
-        return registration.active;
+      return navigator.serviceWorker.ready.then((registration) => {
+        return registration.active || registration.installing || registration.waiting;
       });
-      return sw;
     },
     async arm() {
-      if (armed) return;
       await navigator.serviceWorker.register(getBundledWorkerFileName());
-      const sw = await this.sw;
-      sw.postMessage(ARM);
-      armed = true;
     },
     async disarm() {
-      sw = null;
-      armed = false;
-      const registration = await navigator.serviceWorker.getRegistration(getBundledWorkerFileName());
-      async function _postFinAndWait(worker?: ServiceWorker | null) {
-        if (!worker) return;
-        const barrier = new Promise((resolve) => {
-          worker.addEventListener("message", (event: MessageEvent<typeof FIN>) => {
-            if (event.data === FIN) resolve(undefined);
-          });
-        });
-        const timeout = new Promise((resolve) => setTimeout(resolve, 100));
-        worker.postMessage(FIN);
-        await Promise.race([barrier, timeout]);
-      }
-      await Promise.all([registration?.active, registration?.waiting, registration?.installing].map(_postFinAndWait));
-      await registration?.unregister();
+      await unload();
     },
   };
 }
 
 const proxyInstance = isRunningInBrowserWindow()
   ? new Singleton(() => {
-    const proxyInstance = createProxyInstance();
-    return proxyInstance;
-  })
+      const proxyInstance = createProxyInstance();
+      return proxyInstance;
+    })
   : null;
 
-proxyInstance?.get.disarm();
+export async function unload() {
+  await navigator.serviceWorker.register("nosw.js");
+}
 
 export function createProxyServer(requestListener?: RequestListener): Server {
   const server = new Server();

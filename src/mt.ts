@@ -8,7 +8,6 @@ import { Writable, Duplex, Readable } from "stream";
 import {
   FIN,
   uniqueId,
-  Singleton,
   defaultHost,
   defaultPort,
   normalizedPort,
@@ -16,7 +15,6 @@ import {
   SerializedResponse,
   deserializeRequest,
   isRunningInBrowserWindow,
-  type ProxyWindowInstance,
   getBundledWorkerFileName,
 } from "./common";
 
@@ -259,6 +257,7 @@ export class IncomingMessage extends Readable {
 class Server extends EventEmitter {
   private _host = defaultHost;
   private _port = +defaultPort;
+  private _listening = false;
   constructor() {
     log("creating fakettp server");
     assert(isRunningInBrowserWindow(), "fakettp: Server must be created in main thread.");
@@ -283,7 +282,7 @@ class Server extends EventEmitter {
     };
   }
   get listening() {
-    return proxyInstance.get.armed;
+    return this._listening;
   }
   listen(port?: number, hostname?: string, listeningListener?: () => void): this;
   listen(port?: number, listeningListener?: () => void): this;
@@ -310,30 +309,21 @@ class Server extends EventEmitter {
     const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
     this.once("error", _done);
     this.once("listening", _done);
-    if (proxyInstance.get.armed) {
+    if (this._listening) {
       log("already listening");
       const error = new Error("Already listening.");
       this.emit("error", error);
     } else {
       log("starting to believe...");
-      proxyInstance.get
-        .arm()
-        .then(async () => {
-          while (true) {
-            try {
-              const response = await fetch(`/__status__`);
-              if (response.status === 200) break;
-            } catch (error) {
-              log("error fetching /__status__: %o", error);
-            }
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-        })
+      reload()
+        .then(() => getWorker())
         .then(() => {
+          this._listening = true;
           log("service worker ready");
           this.once("close", () => {
             log("closing service worker");
-            proxyInstance.get.disarm();
+            this._listening = false;
+            unload();
           });
           this.emit("listening");
           navigator.serviceWorker.addEventListener("message", (event: MessageEvent<SerializedRequest>) => {
@@ -380,43 +370,53 @@ class Server extends EventEmitter {
     return this;
   }
   close(callback?: (error?: Error) => void) {
-    proxyInstance.get
-      .disarm()
+    unload()
       .then(() => callback?.(undefined))
-      .catch(callback);
+      .catch(callback)
+      .finally(() => this.emit("close"));
     return this;
   }
 }
 
-function createProxyInstance(): ProxyWindowInstance {
-  return {
-    get armed() {
-      return false;
-    },
-    mt: globalThis,
-    get sw() {
-      return navigator.serviceWorker.ready.then((registration) => {
-        return registration.active || registration.installing || registration.waiting;
-      });
-    },
-    async arm() {
-      await navigator.serviceWorker.register(getBundledWorkerFileName());
-    },
-    async disarm() {
-      await unload();
-    },
-  };
+async function getWorker() {
+  return await navigator.serviceWorker.ready.then((registration) => {
+    return registration.active || registration.installing || registration.waiting;
+  });
 }
 
-const proxyInstance = isRunningInBrowserWindow()
-  ? new Singleton(() => {
-      const proxyInstance = createProxyInstance();
-      return proxyInstance;
-    })
-  : null;
+export async function reload() {
+  navigator.serviceWorker.register(getBundledWorkerFileName());
+  await waitForWorkerLoad();
+}
 
 export async function unload() {
-  await navigator.serviceWorker.register("nosw.js");
+  navigator.serviceWorker.ready.then((r) => r.unregister());
+  navigator.serviceWorker.register("nosw.js");
+  await waitForWorkerStop();
+}
+
+async function waitForWorkerStop() {
+  while (true) {
+    try {
+      const response = await fetch(`/__status__`);
+      if (response.status !== 200) break;
+    } catch (error) {
+      log("error fetching /__status__: %o", error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function waitForWorkerLoad() {
+  while (true) {
+    try {
+      const response = await fetch(`/__status__`);
+      if (response.status === 200) break;
+    } catch (error) {
+      log("error fetching /__status__: %o", error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 export function createProxyServer(requestListener?: RequestListener): Server {

@@ -7,7 +7,27 @@ const log = debug("fakettp:sw");
 export const FIN = "\x00" as const;
 
 export function getBundledWorkerFileName() {
-  return process.env.WEBPACK_FILENAME || "fakettp.js";
+  return process.env.FAKETTP_MAIN || "fakettp.js";
+}
+
+export function getExcludedPaths() {
+  const paths = [getBundledWorkerFileName()];
+  return [
+    ...paths,
+    "nosw.js",
+    "app.html",
+    "favicon.ico",
+    "auxillary.js",
+    "inspector.js",
+    "bundle.webgme.js",
+    "bundle.memory.zip",
+    "sample-express.js",
+    "sample-express.html",
+    "sample-express-static.js",
+    "sample-express-static.html",
+    "sample-socket-io.js",
+    "sample-socket-io.html",
+  ];
 }
 
 export function isRunningInBrowserWindow() {
@@ -41,7 +61,11 @@ export function MessagePortToReadableStream(port: MessagePort, onClose?: () => v
     log("message received from message port: %d", portId);
     if (StringOrBufferToString(data) === FIN) {
       log("fin received from message port for readable stream: %d", portId);
-      controller?.close();
+      try {
+        controller?.close();
+      } catch (e) {
+        log(e);
+      }
       controller = null;
       onClose?.();
     } else {
@@ -83,15 +107,19 @@ export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffe
 }
 
 export async function RequestBodyToReadableStream(request: Request): Promise<ReadableStream> {
-  if (request.body) return request.body;
-  return (await Promise.all([
-    request.clone().blob().then((b) => b && b.stream()),
-    request.clone().text().then((t) => t && (new Blob([t], { type: 'text/plain' })).stream()),
-    request.clone().arrayBuffer().then((b) => b && (new Blob([b], { type: 'application/octet-stream' })).stream()),
-  ])).filter(Boolean)?.[0];
+  const clone = request.clone();
+  if (clone.body) return clone.body;
+  if (clone.bodyUsed) return new ReadableStream();
+  return (
+    await Promise.all([
+      clone.blob().then((b) => b && b.stream()),
+      clone.text().then((t) => t && new Blob([t], { type: "text/plain" }).stream()),
+      clone.arrayBuffer().then((b) => b && new Blob([b], { type: "application/octet-stream" }).stream()),
+    ])
+  ).filter(Boolean)?.[0];
 }
 
-export type SerializedResponse = ResponseInit & { id: number; };
+export type SerializedResponse = ResponseInit & { id: number };
 export type SerializedRequest = Awaited<ReturnType<typeof serializeRequest>>;
 
 export async function serializeRequest(request: Request) {
@@ -104,7 +132,10 @@ export async function serializeRequest(request: Request) {
     headers[key] = value;
   });
   const mode = request.mode;
-  const body = method === "GET" || method === "HEAD" ? null : ReadableStreamToMessagePort(await RequestBodyToReadableStream(request));
+  const body =
+    method === "GET" || method === "HEAD"
+      ? null
+      : ReadableStreamToMessagePort(await RequestBodyToReadableStream(request));
   const credentials = request.credentials;
   const cache = request.cache;
   const redirect = request.redirect;
@@ -129,7 +160,7 @@ export async function serializeRequest(request: Request) {
   };
 }
 
-export function deserializeRequest(request: SerializedRequest): Request & { id?: number; } {
+export function deserializeRequest(request: SerializedRequest): Request & { id?: number } {
   const {
     id,
     url,
@@ -179,40 +210,3 @@ function _defaultPort() {
 
 export const defaultPort = _defaultPort();
 export const defaultHost = _defaultHost();
-
-interface ProxyInstanceEventTargetSW {
-  readonly sw: ServiceWorkerGlobalScope;
-  readonly mt: Promise<Client | null>;
-  readonly listeners: Map<number, (event: MessageEvent<SerializedResponse>) => void>;
-  host: string;
-  port: string;
-}
-
-interface ProxyInstanceEventTargetMT {
-  readonly sw: Promise<ServiceWorker | null>;
-  readonly mt: Window;
-}
-
-type ProxyInstanceEventClients<T extends ServiceWorkerGlobalScope | Window> = T extends ServiceWorkerGlobalScope
-  ? ProxyInstanceEventTargetSW
-  : ProxyInstanceEventTargetMT;
-
-interface ProxyInstanceCommon<T extends ServiceWorkerGlobalScope | Window> {
-  readonly armed: boolean;
-  arm(): Promise<void>;
-  disarm(): Promise<void>;
-}
-
-type ProxyInstance<T extends ServiceWorkerGlobalScope | Window> = ProxyInstanceCommon<T> & ProxyInstanceEventClients<T>;
-
-export type ProxyWindowInstance = ProxyInstance<Window>;
-export type ProxyWorkerInstance = ProxyInstance<ServiceWorkerGlobalScope>;
-
-export class Singleton<T> {
-  private instance: T | null = null;
-  constructor(private readonly factory: () => T) { }
-  get get() {
-    if (this.instance === null) this.instance = this.factory();
-    return this.instance;
-  }
-}

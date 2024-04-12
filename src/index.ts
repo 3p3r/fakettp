@@ -15,8 +15,8 @@ const _http = (() => {
   }
 })();
 
-log("built with webpack mode: %s", process.env.WEBPACK_MODE);
-log("webpack bundle filename: %s", process.env.WEBPACK_FILENAME);
+log("built with webpack mode: %s", process.env.FAKETTP_MODE);
+log("webpack bundle filename: %s", process.env.FAKETTP_MAIN);
 
 if (isRunningInServiceWorker()) createProxyClient();
 

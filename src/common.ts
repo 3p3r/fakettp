@@ -50,6 +50,8 @@ export function StringOrBufferToString(input: StringOrBuffer) {
   if (ArrayBuffer.isView(input)) return new TextDecoder().decode(input);
 }
 
+let counter = 0;
+export const monotonicId = () => ++counter;
 export const uniqueId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
 
 export function MessagePortToReadableStream(port: MessagePort, onClose?: () => void): ReadableStream<ArrayBufferView> {

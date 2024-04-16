@@ -1,6 +1,6 @@
 {
   "name": "fakettp",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "sandbox node core http module in a service worker.",
   "main": "dist/fakettp.js",
   "scripts": {

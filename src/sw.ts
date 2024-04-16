@@ -3,18 +3,21 @@ declare const globalThis: ServiceWorkerGlobalScope;
 import debug from "debug";
 import assert from "assert";
 import {
+  monotonicId,
+  getExcludedPaths,
   serializeRequest,
   SerializedResponse,
   isRunningInServiceWorker,
   MessagePortToReadableStream,
-  getExcludedPaths,
 } from "./common";
 
 const log = debug("fakettp:sw");
+const SEARCH_VALUE = "polling";
+const SEARCH_PARAM = "transport";
 const SOCKET_TIMEOUT = 120000; // 2 minutes
 
 function isLongPolling(url: URL) {
-  return url.pathname.includes("/socket.io/") || url.pathname.includes("/engine.io/");
+  return url.searchParams.has(SEARCH_PARAM) && url.searchParams.get(SEARCH_PARAM) === SEARCH_VALUE;
 }
 
 async function onFetch(this: Listeners, ev: FetchEvent) {
@@ -36,21 +39,22 @@ async function onFetch(this: Listeners, ev: FetchEvent) {
     log("request is excluded from interception: %s", ev.request.url);
     return _bypass();
   }
-  let timer: NodeJS.Timeout | null = null;
-  const work = globalThis.clients.matchAll({ type: "window" }).then((clients) => {
-    return Promise.any(
-      clients.map((mt) => {
-        log("processing fetch event: %s", ev.request.url);
-        const requestUrl = new URL(ev.request.url);
-        return new Promise<Response>(async (resolve, reject) => {
+  let timeoutResponse: NodeJS.Timeout | null = null;
+  log("processing fetch event: %s", ev.request.url);
+  const eventId = monotonicId();
+  const requestUrl = new URL(ev.request.url);
+  const work = globalThis.clients.matchAll({ type: "window" }).then((clients) =>
+    Promise.any([
+      ...clients.map((mt) => {
+        return new Promise<Response>(async (resolve) => {
           try {
             const requestSerialized = await serializeRequest(ev.request);
             const requestId = requestSerialized.id;
             log("fetch event: %s, id: %d", ev.request.url, requestId);
-            this.set(requestId, (event: MessageEvent<SerializedResponse>) => {
-              if (timer) {
-                clearTimeout(timer);
-                timer = null;
+            const cb = (event: MessageEvent<SerializedResponse>) => {
+              if (timeoutResponse) {
+                clearTimeout(timeoutResponse);
+                timeoutResponse = null;
               }
               log("fetch event: %s, id: %d, response event: %s", ev.request.url, requestId, event.data.id);
               this.delete(requestId);
@@ -60,23 +64,41 @@ async function onFetch(this: Listeners, ev: FetchEvent) {
               const responseBody = MessagePortToReadableStream(event.ports[0]);
               log("responding to fetch event: %s, id: %d", ev.request.url, requestId);
               resolve(new Response(responseBody, responseInit));
-            });
+            };
+            Object.assign(cb, { eventId });
+            this.set(requestId, cb);
             const { body: requestBody, ...requestRest } = requestSerialized;
             mt.postMessage(requestRest, requestBody ? [requestBody] : []);
           } catch (err) {
-            log("error: %o", err);
-            reject(err);
-          }
-          if (!isLongPolling(requestUrl)) {
-            timer = setTimeout(() => {
-              timer = null;
-              resolve(new Response(null, { status: 504, statusText: "Gateway Timeout" }));
-            }, SOCKET_TIMEOUT);
+            log("sw fetch error: %o", err);
           }
         });
-      })
-    );
-  });
+      }),
+      new Promise<Response>((resolve) => {
+        if (!isLongPolling(requestUrl)) {
+          timeoutResponse = setTimeout(() => {
+            timeoutResponse = null;
+            const eventCbs: number[] = [];
+            this.forEach((cb, id) => {
+              assert("eventId" in cb);
+              if (cb.eventId === eventId) {
+                eventCbs.push(id);
+              }
+            });
+            eventCbs.forEach((id) => {
+              this.delete(id);
+            });
+            resolve(
+              new Response(null, {
+                statusText: "Gateway Timeout",
+                status: 504,
+              })
+            );
+          }, SOCKET_TIMEOUT);
+        }
+      }),
+    ])
+  );
 
   ev.respondWith(work);
 }

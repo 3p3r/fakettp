@@ -1,0 +1,47 @@
+diff --git a/node_modules/@mixer/postmessage-rpc/dist/rpc.js b/node_modules/@mixer/postmessage-rpc/dist/rpc.js
+index 4b452f8..4432bce 100644
+--- a/node_modules/@mixer/postmessage-rpc/dist/rpc.js
++++ b/node_modules/@mixer/postmessage-rpc/dist/rpc.js
+@@ -46,19 +46,7 @@ var RPC = /** @class */ (function (_super) {
+          * Reorder utility for incoming messages.
+          */
+         _this.reorder = new reorder_1.Reorder();
+-        _this.listener = function (ev) {
+-            // If we got data that wasn't a string or could not be parsed, or was
+-            // from a different remote, it's not for us.
+-            if (_this.options.origin && _this.options.origin !== '*' && ev.origin !== _this.options.origin) {
+-                return;
+-            }
+-            var packet;
+-            try {
+-                packet = JSON.parse(ev.data);
+-            }
+-            catch (e) {
+-                return;
+-            }
++        _this.listener = function (packet) {
+             if (!types_1.isRPCMessage(packet) || packet.serviceID !== _this.options.serviceId) {
+                 return;
+             }
+@@ -216,7 +204,7 @@ var RPC = /** @class */ (function (_super) {
+     };
+     RPC.prototype.post = function (message) {
+         message.counter = this.callCounter++;
+-        this.options.target.postMessage(JSON.stringify(message), this.options.origin || '*');
++        this.options.target.postMessage(message, this.options.origin || '*');
+     };
+     RPC.prototype.isReadySignal = function (packet) {
+         if (packet.type === 'method' && packet.method === 'ready') {
+diff --git a/node_modules/@mixer/postmessage-rpc/dist/types.js b/node_modules/@mixer/postmessage-rpc/dist/types.js
+index abbdeb4..ff48989 100644
+--- a/node_modules/@mixer/postmessage-rpc/dist/types.js
++++ b/node_modules/@mixer/postmessage-rpc/dist/types.js
+@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
+  * and postmessages from other sources.
+  */
+ function isRPCMessage(data) {
+-    return (data.type === 'method' || data.type === 'reply') && typeof data.counter === 'number';
++    return typeof data === "object" && (data.type === 'method' || data.type === 'reply') && typeof data.counter === 'number';
+ }
+ exports.isRPCMessage = isRPCMessage;
+ /**

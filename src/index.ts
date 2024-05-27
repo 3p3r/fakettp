@@ -1,35 +1,24 @@
-import debug from "debug";
-
 import { createProxyClient } from "./sw";
-import { isRunningInBrowserWindow, isRunningInServiceWorker } from "./common";
-import { createProxyServer, IncomingMessage, ServerResponse, unload } from "./mt";
+import { createProxyServer, IncomingMessage, ServerResponse } from "./mt";
+import { getContext, setContext, DefaultContext } from "./context";
+import { isRunningInServiceWorker } from "./common";
 
 import type { RequestListener } from "http";
-
-const log = debug("fakettp");
-const _http = (() => {
-  try {
-    return require("stream-http");
-  } catch (_) {
-    return {};
-  }
-})();
-
-log("built with webpack mode: %s", process.env.FAKETTP_MODE);
-log("webpack bundle filename: %s", process.env.FAKETTP_MAIN);
 
 if (isRunningInServiceWorker()) createProxyClient();
 
 const http = {
-  ..._http,
-  unload,
+  ...require("stream-http"),
+  getContext,
+  setContext,
+  DefaultContext,
   ServerResponse,
   IncomingMessage,
-  createServer: isRunningInBrowserWindow()
+  createServer: !isRunningInServiceWorker()
     ? (...args: any[]) => {
-      const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
-      return createProxyServer(requestListener);
-    }
+        const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
+        return createProxyServer(requestListener);
+      }
     : undefined,
   __esModule: true,
 };

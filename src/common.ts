@@ -1,38 +1,12 @@
-declare const globalThis: ServiceWorkerGlobalScope | Window;
-
 import debug from "debug";
+import { v4 as uuid } from "uuid";
 
-const log = debug("fakettp:sw");
+import { MessageChannel, MessagePort } from "./channel";
+
+const LOG = debug("fakettp:common");
+const log = (patt: string, ...args: any[]) => LOG(`[${threadId()}] ${patt}`, ...args);
 
 export const FIN = "\x00" as const;
-
-export function getBundledWorkerFileName() {
-  return process.env.FAKETTP_MAIN || "fakettp.js";
-}
-
-export function getExcludedPaths() {
-  const paths = [getBundledWorkerFileName()];
-  return [
-    ...paths,
-    "nosw.js",
-    "app.html",
-    "favicon.ico",
-    "auxillary.js",
-    "inspector.js",
-    "bundle.webgme.js",
-    "bundle.memory.zip",
-    "sample-express.js",
-    "sample-express.html",
-    "sample-express-static.js",
-    "sample-express-static.html",
-    "sample-socket-io.js",
-    "sample-socket-io.html",
-  ];
-}
-
-export function isRunningInBrowserWindow() {
-  return typeof window !== "undefined" && window === globalThis;
-}
 
 export function isRunningInServiceWorker() {
   return typeof globalThis !== "undefined" && "ServiceWorkerGlobalScope" in globalThis;
@@ -50,28 +24,25 @@ export function StringOrBufferToString(input: StringOrBuffer) {
   if (ArrayBuffer.isView(input)) return new TextDecoder().decode(input);
 }
 
-let counter = 0;
-export const monotonicId = () => ++counter;
-export const uniqueId = () => Date.now() * 1000 + Math.floor(Math.random() * 1000);
+export const uniqueId = () => uuid();
 
-export function MessagePortToReadableStream(port: MessagePort, onClose?: () => void): ReadableStream<ArrayBufferView> {
+export function MessagePortToReadableStream(port: MessagePort): ReadableStream<ArrayBufferView> {
   const portId = uniqueId();
-  log("creating readable stream from message port: %d", portId);
+  log("creating readable stream from message port: %s", portId);
   let controller: ReadableStreamController<ArrayBufferView> | null = null;
-  port.onmessage = function (event: MessageEvent<StringOrBuffer | typeof FIN>) {
-    const { data } = event;
-    log("message received from message port: %d", portId);
+  port.onmessage = function (data: StringOrBuffer | typeof FIN) {
+    log("message received from message port: %s", portId);
     if (StringOrBufferToString(data) === FIN) {
-      log("fin received from message port for readable stream: %d", portId);
+      log("fin received from message port for readable stream: %s", portId);
       try {
         controller?.close();
       } catch (e) {
         log(e);
       }
       controller = null;
-      onClose?.();
+      port.close();
     } else {
-      log("pushing data to readable stream from message port: %d", portId);
+      log("pushing data to readable stream from message port: %s", portId);
       const content = StringOrBufferToBuffer(data);
       controller?.enqueue(content);
     }
@@ -79,29 +50,28 @@ export function MessagePortToReadableStream(port: MessagePort, onClose?: () => v
   return new ReadableStream<ArrayBufferView>({
     type: "bytes",
     start(ctrl) {
-      log("controller started for readable stream from message port: %d", portId);
+      log("controller started for readable stream from message port: %s", portId);
       controller = ctrl;
     },
   });
 }
 
-export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffer>, onClose?: () => void): MessagePort {
+export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffer>): MessagePort {
   const channel = new MessageChannel();
   const portId = uniqueId();
   const port = channel.port1;
-  log("creating message port from readable stream: %d", portId);
+  log("creating message port from readable stream: %s", portId);
   stream.pipeTo(
     new WritableStream<StringOrBuffer>({
       write(data) {
-        log("pushing data from readable stream to message port: %d", portId);
+        log("pushing data from readable stream to message port: %s", portId);
         const content = StringOrBufferToBuffer(data);
-        port.postMessage(content, [content.buffer]);
+        port.postMessage(content);
       },
       close() {
-        log("fin received from stream for message port: %d", portId);
+        log("fin received from stream for message port: %s", portId);
         port.postMessage(FIN);
         channel.port1.close();
-        onClose?.();
       },
     })
   );
@@ -121,12 +91,12 @@ export async function RequestBodyToReadableStream(request: Request): Promise<Rea
   ).filter(Boolean)?.[0];
 }
 
-export type SerializedResponse = ResponseInit & { id: number };
+export type SerializedResponse = ResponseInit & { id: string; body: string };
 export type SerializedRequest = Awaited<ReturnType<typeof serializeRequest>>;
 
 export async function serializeRequest(request: Request) {
   const id = uniqueId();
-  log("serializing request: %d", id);
+  log("serializing request: %s", id);
   const url = request.url;
   const method = request.method;
   const headers: Record<string, string> = {};
@@ -162,7 +132,7 @@ export async function serializeRequest(request: Request) {
   };
 }
 
-export function deserializeRequest(request: SerializedRequest): Request & { id?: number } {
+export function deserializeRequest(request: SerializedRequest): Request & { id?: string } {
   const {
     id,
     url,
@@ -178,11 +148,12 @@ export function deserializeRequest(request: SerializedRequest): Request & { id?:
     integrity,
     keepalive,
   } = request;
-  log("deserializing request: %d", id);
+  log("deserializing request: %s", id);
   const requestInit: RequestInit = {};
+  Object.assign(requestInit, { duplex: "half" });
   if (method) requestInit.method = method;
   if (headers) requestInit.headers = new Headers(headers);
-  if (body) requestInit.body = MessagePortToReadableStream(body);
+  if (body) requestInit.body = MessagePortToReadableStream(new MessagePort(body as unknown as string));
   if (mode) requestInit.mode = mode === "navigate" ? undefined : mode;
   if (credentials) requestInit.credentials = credentials;
   if (cache) requestInit.cache = cache;
@@ -200,15 +171,86 @@ export function normalizedPort(url: URL) {
   return url.port !== "" ? url.port : url.protocol === "https:" ? "443" : "80";
 }
 
-function _defaultHost() {
-  const _url = new URL(globalThis.location.href);
+export function defaultUrl() {
+  if (typeof globalThis !== "undefined" && "location" in globalThis) {
+    return new URL(globalThis.location.href);
+  } else {
+    log("defaultURL: globalThis.location not found.");
+    return new URL("http://localhost");
+  }
+}
+
+export function defaultHost() {
+  const _url = defaultUrl();
   return _url.hostname;
 }
 
-function _defaultPort() {
-  const _url = new URL(globalThis.location.href);
+export function defaultPort() {
+  const _url = defaultUrl();
   return normalizedPort(_url);
 }
 
-export const defaultPort = _defaultPort();
-export const defaultHost = _defaultHost();
+export class Singleton<T> {
+  private _instance: T | null = null;
+  private _factory: () => T;
+  constructor(factory: () => T) {
+    this._factory = factory;
+  }
+  Get() {
+    if (this._instance === null) {
+      this._instance = this._factory();
+    }
+    return this._instance;
+  }
+}
+
+const THREAD_ID = new Singleton(() => {
+  const _id = uniqueId();
+  return `${_id.slice(0, 3)}${_id.slice(-3)}`;
+});
+
+export function threadId() {
+  return THREAD_ID.Get();
+}
+
+export function timedPromise<T>(ms: number, promise: Promise<T>, message = "Timed out") {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
+
+export interface PartConfig {
+  readonly include?: string[];
+  readonly exclude?: string[];
+}
+
+export interface FullConfig {
+  readonly include: RegExp[];
+  readonly exclude: RegExp[];
+}
+
+const DEFAULT_CONFIG: Required<PartConfig> = {
+  exclude: ["fakettp\\.js", "nosw\\.js$", "favicon\\.ico$"],
+  include: [".*"],
+};
+
+export function getConfigFromLocation(): Required<PartConfig> {
+  if (typeof globalThis !== "object" || !("location" in globalThis)) {
+    log("location object not found");
+    return DEFAULT_CONFIG;
+  }
+  log("checking for location config: %o", globalThis.location);
+  const search = new URLSearchParams(globalThis.location.search);
+  const include = search.getAll("i");
+  const exclude = search.getAll("e");
+  if (include.length === 0 && exclude.length === 0) {
+    log("no location config found, using defaults");
+    return DEFAULT_CONFIG;
+  }
+  const out = { include, exclude };
+  log("location config: %o", out);
+  return out;
+}

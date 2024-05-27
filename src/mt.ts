@@ -1,21 +1,21 @@
-declare const globalThis: Window;
-
 import debug from "debug";
 import assert from "assert";
 import { EventEmitter } from "events";
 import type { RequestListener } from "http";
 import { Writable, Duplex, Readable } from "stream";
+
+import { getContext } from "./context";
+import { MessageChannel, MessagePort } from "./channel";
 import {
   FIN,
   uniqueId,
+  defaultUrl,
   defaultHost,
   defaultPort,
   normalizedPort,
   SerializedRequest,
   SerializedResponse,
   deserializeRequest,
-  isRunningInBrowserWindow,
-  getBundledWorkerFileName,
 } from "./common";
 
 const nosup = (..._unused: any[]) => assert(false, "fakettp: not supported.");
@@ -40,17 +40,17 @@ class Socket extends Duplex {
 
   constructor(readonly incomingRequest: Request, public readonly ports: SocketPorts) {
     super();
-    log("creating socket: %d", this.id);
+    log("creating socket: %s", this.id);
     ports.responsePort.start();
     ports.requestPort?.start();
     if (this.ports.requestPort && canRequestHaveBody(incomingRequest.method)) {
-      this.ports.requestPort.onmessage = (event: MessageEvent<ArrayBufferView | typeof FIN>) => {
-        if (event.data === FIN) {
-          log("request port received FIN: %d", this.id);
+      this.ports.requestPort.onmessage = (data: ArrayBufferView | typeof FIN) => {
+        if (data === FIN) {
+          log("request port received FIN: %s", this.id);
           this.push(null);
         } else {
-          log("request port received data: %d", this.id);
-          this.push(event.data);
+          log("request port received data: %s", this.id);
+          this.push(data);
         }
       };
     }
@@ -59,34 +59,34 @@ class Socket extends Duplex {
     this.remotePort = this._getRemotePort();
   }
   private _getRemoteAddress() {
-    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
+    const _url = new URL(this.incomingRequest.url || defaultUrl().href);
     return _url.hostname;
   }
   private _getRemoteFamily() {
     return "IPv4";
   }
   private _getRemotePort() {
-    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
+    const _url = new URL(this.incomingRequest.url || defaultUrl().href);
     return normalizedPort(_url);
   }
   _destroy(error?: Error, callback?: (error?: Error) => void): void {
-    log("destroying socket: %d", this.id);
+    log("destroying socket: %s", this.id);
     this.ports.responsePort.close();
     this.ports.requestPort?.close();
     callback?.(error);
   }
   _write(data: any, encoding?: BufferEncoding, callback?: (error?: Error) => void): void {
-    log("writing to socket: %d with encoding", this.id, encoding);
-    assert("buffer" in data);
-    this.ports.responsePort.postMessage(data, [data.buffer]);
+    log("writing to socket: %s with encoding", this.id, encoding);
+    assert("buffer" in data, "fakettp: data must be a buffer");
+    this.ports.responsePort.postMessage(data);
     callback?.();
   }
   _read(size: number): void {
     if (canRequestHaveBody(this.incomingRequest.method)) {
-      log("reading from socket: %d", this.id);
+      log("reading from socket: %s", this.id);
       this.ports.requestPort?.postMessage(size);
     } else {
-      log("socket cannot have more data: %d", this.id);
+      log("socket cannot have more data: %s", this.id);
       this.push(null);
     }
   }
@@ -127,12 +127,12 @@ export class ServerResponse extends Writable {
   }
   // https://github.com/expressjs/session/pull/908/files
   get _header() {
-    log("deprecated _header for server response");
+    // log("deprecated _header for server response"); // too much log spam
     return !!this.headersSent;
   }
   // https://github.com/expressjs/session/pull/908/files
   _implicitHeader() {
-    log("deprecated _implicitHeader for server response");
+    // log("deprecated _implicitHeader for server response"); // too much log spam
     this.writeHead(this.statusCode, this.statusMessage, this.getHeaders());
   }
   writeHead(statusCode: number, statusMessage?: string, headers?: Record<string, string>) {
@@ -175,14 +175,14 @@ export class ServerResponse extends Writable {
     }
   }
   private _getRemoteAddress() {
-    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
+    const _url = new URL(this.incomingRequest.url || defaultUrl().href);
     return _url.hostname;
   }
   private _getRemoteFamily() {
     return "IPv4";
   }
   private _getRemotePort() {
-    const _url = new URL(this.incomingRequest.url || globalThis.location.href);
+    const _url = new URL(this.incomingRequest.url || defaultUrl().href);
     return normalizedPort(_url);
   }
 }
@@ -204,7 +204,7 @@ export class IncomingMessage extends Readable {
       this.push(null);
     });
     this.socket.on("data", (chunk: any) => {
-      log("data received in incoming message from socket: %d", this.socket.id);
+      log("data received in incoming message from socket: %s", this.socket.id);
       this.push(chunk);
     });
     this.headers = this._getHeaders();
@@ -215,10 +215,10 @@ export class IncomingMessage extends Readable {
   }
   _read(size: number): void {
     if (this.complete) {
-      log("incoming message does not have data: %d", this.socket.id);
+      log("incoming message does not have data: %s", this.socket.id);
       return;
     } else {
-      log("incoming message needs data: %d", this.socket.id);
+      log("incoming message needs data: %s", this.socket.id);
       this.socket.read(size);
     }
   }
@@ -255,15 +255,9 @@ export class IncomingMessage extends Readable {
 }
 
 class Server extends EventEmitter {
-  private _host = defaultHost;
-  private _port = +defaultPort;
-  private _listening = false;
-  constructor() {
-    log("creating fakettp server");
-    assert(isRunningInBrowserWindow(), "fakettp: Server must be created in main thread.");
-    assert("serviceWorker" in navigator, "fakettp: ServiceWorkers are not supported.");
-    super();
-  }
+  private _host = defaultHost();
+  private _port = +defaultPort();
+  private _dispose: Function | null = null;
   address() {
     const { _host, _port } = this;
     return {
@@ -279,10 +273,13 @@ class Server extends EventEmitter {
       toString() {
         return `${this.address}:${this.port}`;
       },
+      toJSON() {
+        return this.toString();
+      },
     };
   }
   get listening() {
-    return this._listening;
+    return this._dispose !== null;
   }
   listen(port?: number, hostname?: string, listeningListener?: () => void): this;
   listen(port?: number, listeningListener?: () => void): this;
@@ -304,34 +301,35 @@ class Server extends EventEmitter {
       this._port = args[0].port || this._port;
       this._host = args[0].host || this._host;
     }
-    log("listening on address: %o", this.address());
+    log("listening on address: %s", JSON.stringify(this.address()));
     const _last = args.pop();
     const _done = typeof _last === "function" ? (_last as (error?: Error) => void) : () => {};
     this.once("error", _done);
     this.once("listening", _done);
-    if (this._listening) {
+    if (this.listening) {
       log("already listening");
       const error = new Error("Already listening.");
       this.emit("error", error);
     } else {
       log("starting to believe...");
       reload()
-        .then(() => getWorker())
-        .then(() => {
-          this._listening = true;
+        .then(getContext)
+        .then((ctx) => {
           log("service worker ready");
           this.once("close", () => {
             log("closing service worker");
-            this._listening = false;
+            this._dispose?.();
+            this._dispose = null;
             unload();
           });
           this.emit("listening");
-          navigator.serviceWorker.addEventListener("message", (event: MessageEvent<SerializedRequest>) => {
-            log("message received from service worker");
+          this._dispose = ctx.readMessages((event: SerializedRequest) => {
+            if (!("id" in event && "body" in event && "url" in event)) return;
+            log("message received from service worker: %o", event);
             const responseChannel = new MessageChannel();
             const responsePort = responseChannel.port1;
-            const requestPort = event.ports[0];
-            const request = deserializeRequest(event.data);
+            const requestPort = new MessagePort(event.body as unknown as string);
+            const request = deserializeRequest(event);
             const socket = new Socket(request, { responsePort, requestPort });
             this.emit("connection", socket);
             const message = new IncomingMessage(request, socket);
@@ -341,18 +339,14 @@ class Server extends EventEmitter {
               log("closing request stream");
               response.headersSent = true;
               log("responding to service worker");
-              event.source.postMessage(
-                {
-                  id: request.id,
-                  status: response.statusCode,
-                  statusText: response.statusMessage,
-                  headers: response.getHeaders(),
-                } as SerializedResponse,
-                {
-                  transfer: [responseChannel.port2],
-                  targetOrigin: event.origin,
-                }
-              );
+              const payload: SerializedResponse = {
+                id: request.id,
+                body: responseChannel.port2.toString(),
+                status: response.statusCode,
+                statusText: response.statusMessage,
+                headers: response.getHeaders(),
+              };
+              ctx.postMessage(payload);
             };
             response.once("finish", () => {
               if (message.complete) _wrapUp();
@@ -378,45 +372,12 @@ class Server extends EventEmitter {
   }
 }
 
-async function getWorker() {
-  return await navigator.serviceWorker.ready.then((registration) => {
-    return registration.active || registration.installing || registration.waiting;
-  });
+async function reload() {
+  await getContext().reloadWorker?.();
 }
 
-export async function reload() {
-  navigator.serviceWorker.register(getBundledWorkerFileName());
-  await waitForWorkerLoad();
-}
-
-export async function unload() {
-  navigator.serviceWorker.ready.then((r) => r.unregister());
-  navigator.serviceWorker.register("nosw.js");
-  await waitForWorkerStop();
-}
-
-async function waitForWorkerStop() {
-  while (true) {
-    try {
-      const response = await fetch(`/__status__`);
-      if (response.status !== 200) break;
-    } catch (error) {
-      log("error fetching /__status__: %o", error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-
-async function waitForWorkerLoad() {
-  while (true) {
-    try {
-      const response = await fetch(`/__status__`);
-      if (response.status === 200) break;
-    } catch (error) {
-      log("error fetching /__status__: %o", error);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
+async function unload() {
+  await getContext().unloadWorker?.();
 }
 
 export function createProxyServer(requestListener?: RequestListener): Server {

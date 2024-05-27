@@ -1,6 +1,6 @@
 # fakettp
 
-sandbox node core http module in a service worker.
+sandbox node core http module in a service worker.
 
 - [disclaimer](#disclaimer)
 - [motivation](#motivation)

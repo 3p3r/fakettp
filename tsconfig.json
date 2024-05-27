@@ -8,6 +8,7 @@
     "allowJs": true,
     "lib": ["ES2021", "DOM", "WebWorker"],
     "skipDefaultLibCheck": true,
+    "skipLibCheck": true,
     "outDir": "dist/build"
   },
   "files": ["src/index.ts"],

@@ -3,11 +3,13 @@ import { createProxyServer, IncomingMessage, ServerResponse } from "./mt";
 import { getContext, setContext, DefaultContext } from "./context";
 import { isRunningInServiceWorker } from "./common";
 
+import { RPC } from "@mixer/postmessage-rpc";
 import type { RequestListener } from "http";
 
 if (isRunningInServiceWorker()) createProxyClient();
 
 const http = {
+  RPC,
   ...require("stream-http"),
   getContext,
   setContext,

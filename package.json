@@ -3,6 +3,7 @@
   "version": "1.9.3",
   "description": "sandbox node core http module in a service worker.",
   "main": "dist/fakettp.js",
+  "types": "./index.d.ts",
   "scripts": {
     "install": "patch-package && npm run build",
     "build": "webpack",

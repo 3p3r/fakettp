@@ -46,8 +46,15 @@ const mainConfig: webpack.Configuration = {
             delete pkg.private;
             delete pkg.scripts;
             delete pkg.devDependencies;
-            pkg.main = "build/index.js";
-            pkg.files = ["LICENSE", "README.md", mainConfig.output?.filename, noswConfig.output?.filename, "build"];
+            pkg.main = "./fakettp.js";
+            pkg.files = [
+              "build",
+              "LICENSE",
+              "README.md",
+              "index.d.ts",
+              mainConfig.output?.filename,
+              noswConfig.output?.filename,
+            ];
             return JSON.stringify(pkg, null, 2);
           },
         },
@@ -57,6 +64,10 @@ const mainConfig: webpack.Configuration = {
         },
         {
           from: "LICENSE",
+          to: DIST,
+        },
+        {
+          from: "index.d.ts",
           to: DIST,
         },
       ],

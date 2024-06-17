@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 declare module "fakettp" {
   type CleanupReceiver = () => void | Promise<void>;
   type MessageReceiver = (message: any) => void | Promise<void>;
@@ -9,7 +10,7 @@ declare module "fakettp" {
   }
   export function setContext(context: Context): void;
   export function getContext(): Context;
-  export class DefaultContext implements Context {
+  export class WindowContext implements Context {
     constructor(config?: { include?: RegExp[]; exclude?: RegExp[] });
     postMessage(message: any): void;
     readMessages(callback: MessageReceiver): CleanupReceiver;
@@ -35,8 +36,18 @@ declare module "fakettp" {
     constructor(options: RPCOptions);
     create(options: RPCOptions): Promise<RPC>;
     expose<T>(method: string, handler: (params: T) => Promise<any> | any): this;
-    call<T>(method: string, params: object, waitForReply?: true): Promise<T>;
-    call(method: string, params: object, waitForReply: false): void;
+    call<T>(method: string, params?: object, waitForReply?: true): Promise<T>;
+    call(method: string, params?: object, waitForReply?: false): void;
     destroy(): void;
+  }
+  export class RemoteContext implements Context {
+    constructor(rpc: RPC);
+    postMessage(message: any): void;
+    readMessages(callback: MessageReceiver): CleanupReceiver;
+    reloadWorker(): Promise<void>;
+    unloadWorker(): Promise<void>;
+  }
+  export class IFrameContext extends RemoteContext {
+    constructor(frame: HTMLIFrameElement);
   }
 }

@@ -146,8 +146,10 @@ and if you attempt to send a request after that, you will get an error:
 working samples:
 
 - `ext/samples/express.ts`: express app with a dynamic route.
+- `ext/samples/express-post.ts`: express app with a post route.
 - `ext/samples/express-static.ts`: express app with static files.
 - `ext/samples/socket-io.ts`: express app with socket io.
+- `ext/samples/remote-context`: shows the usage of `fakettp.html`.
 
 this is what is known to work good enough for most use cases:
 

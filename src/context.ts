@@ -3,7 +3,9 @@
 
 import debug from "debug";
 import assert from "assert";
+import { RPC } from "@mixer/postmessage-rpc";
 import { backOff } from "exponential-backoff";
+import { EventEmitter } from "events";
 
 import { type FullConfig, type PartConfig, getConfigFromLocation } from "./common";
 
@@ -19,7 +21,76 @@ export interface Context {
   readonly unloadWorker?: () => void | Promise<void>;
 }
 
-export class DefaultContext implements Context {
+export class RemoteContext implements Context {
+  private readonly _emitter = new EventEmitter();
+
+  constructor(readonly rpc: RPC) {
+    this.rpc.expose("message", ({ message }: { message: any }) => {
+      this._emitter.emit("message", message);
+    });
+  }
+
+  async postMessage(message: any) {
+    log("posting message %o via remote context", message);
+    await this.rpc.isReady;
+    await this.rpc.call("message", { message }, true);
+  }
+
+  readMessages(callback: MessageReceiver) {
+    this._emitter.on("message", callback);
+    return () => {
+      this._emitter.off("message", callback);
+    };
+  }
+
+  async reloadWorker() {
+    log("reloading worker via remote context");
+    await this.rpc.isReady;
+    await this.rpc.call("reload", {}, true);
+  }
+
+  async unloadWorker() {
+    log("unloading worker via remote context");
+    await this.rpc.isReady;
+    await this.rpc.call("unload", {}, true);
+  }
+
+  async navigate(url: string) {
+    log("navigating to %s via remote context", url);
+    await this.rpc.isReady;
+    await this.rpc.call("navigate", { url }, true);
+  }
+}
+
+function getReferencedWindow(el: HTMLElement) {
+  const doc = el.ownerDocument;
+  if (!doc) return null;
+  return doc.defaultView;
+}
+
+export class IFrameContext extends RemoteContext {
+  constructor(readonly frame: HTMLIFrameElement) {
+    const serviceId = `fakettp:${new URL(frame.src).href}`;
+    log("remote service ID: %s", serviceId);
+    super(
+      new RPC({
+        serviceId,
+        target: frame.contentWindow,
+        receiver: {
+          readMessages: (cb) => {
+            const _cb = ({ data }: MessageEvent) => cb(data);
+            getReferencedWindow(frame)?.addEventListener("message", _cb);
+            return () => {
+              getReferencedWindow(frame)?.removeEventListener("message", _cb);
+            };
+          },
+        },
+      })
+    );
+  }
+}
+
+export class WindowContext implements Context {
   private _worker: ServiceWorker | null = null;
   private readonly _config: Required<PartConfig>;
 
@@ -99,7 +170,7 @@ let _context: Context | null = null;
 export const getContext = () => {
   if (!_context) {
     log("creating a default context. use setContext to override this.");
-    _context = new DefaultContext();
+    _context = new WindowContext();
   }
   return _context;
 };

@@ -12,6 +12,20 @@ export function isRunningInServiceWorker() {
   return typeof globalThis !== "undefined" && "ServiceWorkerGlobalScope" in globalThis;
 }
 
+export function isRunningInServiceWindow() {
+  return (
+    typeof window !== "undefined" &&
+    window.parent !== window &&
+    typeof document !== "undefined" &&
+    document.getElementById("fakettp-frame") !== null
+  );
+}
+
+export function getServiceId() {
+  const url = new URL(isRunningInServiceWindow() ? globalThis.location.href : "http://localhost");
+  return `fakettp:${url.href}`;
+}
+
 export type StringOrBuffer = string | ArrayBufferView;
 
 export function StringOrBufferToBuffer(input: StringOrBuffer) {
@@ -233,7 +247,7 @@ export interface FullConfig {
 }
 
 const DEFAULT_CONFIG: Required<PartConfig> = {
-  exclude: ["fakettp\\.js", "nosw\\.js$", "favicon\\.ico$"],
+  exclude: ["fakettp\\.html", "fakettp\\.js", "nosw\\.js$", "favicon\\.ico$"],
   include: [".*"],
 };
 
@@ -253,4 +267,8 @@ export function getConfigFromLocation(): Required<PartConfig> {
   const out = { include, exclude };
   log("location config: %o", out);
   return out;
+}
+
+export function isDebugEnabled() {
+  return typeof globalThis !== "undefined" && globalThis.location?.search.includes("d");
 }

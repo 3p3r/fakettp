@@ -5,6 +5,7 @@ import HtmlWebpackPlugin from "html-webpack-plugin";
 import CopyWebpackPlugin from "copy-webpack-plugin";
 import TerserWebpackPlugin from "terser-webpack-plugin";
 import WebpackShellPlugin from "webpack-shell-plugin-next";
+import { globSync } from "glob";
 
 import "webpack-dev-server";
 
@@ -36,6 +37,16 @@ const mainConfig: webpack.Configuration = {
     new webpack.ProvidePlugin({
       process: "process/browser",
     }),
+    new HtmlWebpackPlugin({
+      filename: "fakettp.html",
+      template: "./src/frame.html",
+      minify: {
+        html5: true,
+        minifyCSS: true,
+        minifyJS: false,
+        collapseWhitespace: true,
+      },
+    }),
     new CopyWebpackPlugin({
       patterns: [
         {
@@ -47,14 +58,7 @@ const mainConfig: webpack.Configuration = {
             delete pkg.scripts;
             delete pkg.devDependencies;
             pkg.main = "./fakettp.js";
-            pkg.files = [
-              "build",
-              "LICENSE",
-              "README.md",
-              "index.d.ts",
-              mainConfig.output?.filename,
-              noswConfig.output?.filename,
-            ];
+            pkg.files = ["LICENSE", "README.md", "index.d.ts", "fakettp.js", "fakettp.html", "nosw.js"];
             return JSON.stringify(pkg, null, 2);
           },
         },
@@ -232,7 +236,7 @@ function makeTemplateIndexContent(...names: string[]) {
     <h2 style="color:red">for best results, view this page in Chrome and in incognito mode.</h2>
     <p>Examples:</p>
     <ul>
-${names.map((name) => `      <li><a href="sample-${name}.html">${name}</a></li>`).join("\n")}
+      ${names.map((name) => `<li><a href="sample-${name}.html">${name}</a></li>`).join("\n")}
     </ul>
   </body>
   <script>
@@ -268,5 +272,5 @@ function createConfigForExamples(...names: string[]) {
 export default [
   mainConfig,
   noswConfig,
-  ...createConfigForExamples("express", "express-post", "express-static", "socket-io"),
+  ...createConfigForExamples(...globSync("ext/samples/*.ts").map((f) => path.basename(f, ".ts"))),
 ];

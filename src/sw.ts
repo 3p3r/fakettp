@@ -9,6 +9,7 @@ import { type Context, setContext } from "./context";
 import {
   uniqueId,
   Singleton,
+  isDebugEnabled,
   type FullConfig,
   serializeRequest,
   SerializedResponse,
@@ -16,6 +17,8 @@ import {
   isRunningInServiceWorker,
   MessagePortToReadableStream,
 } from "./common";
+
+if (isDebugEnabled()) debug.enable("*");
 
 const log = debug("fakettp:sw");
 const emitter = new EventEmitter();
@@ -176,8 +179,8 @@ const CONFIG = new Singleton(buildConfigFromLocation);
 
 const getConfig = () => CONFIG.Get();
 
-export function createProxyClient() {
-  log("creating sw client");
+export function installProxyWorker() {
+  log("install proxy worker");
   assert(isRunningInServiceWorker(), "fakettp: createProxyClient != sw.");
   const listeners: Listeners = new Map();
   globalThis.addEventListener("fetch", onFetch.bind(listeners));

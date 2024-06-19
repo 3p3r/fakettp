@@ -5,13 +5,16 @@ import type { AddressInfo } from "net";
 import { createBib } from "../bib";
 import { IFrameContext, setContext } from "../../src/context";
 
-async function wrapUp(url: string) {
-  const response = await fetch(url);
-  const text = await response.text();
-  alert(text); // Hello From Remote Context!
-}
+const params = new URLSearchParams(location.search);
 
-const serviceUrl = new URL("fakettp.html", location.href);
+params.set("d", ""); // enables debugging
+params.set("i", new RegExp("localhost").source);
+params.append("e", new RegExp("fakettp.html").source);
+params.append("e", new RegExp("fakettp.js").source);
+params.append("e", new RegExp("nosw.js").source);
+params.append("e", new RegExp("sample-.*").source);
+
+const serviceUrl = new URL(`fakettp.html?${params.toString()}`, location.href);
 
 createBib(serviceUrl.href).then((frame) => {
   frame.onload = () => {
@@ -31,7 +34,7 @@ createBib(serviceUrl.href).then((frame) => {
       const address = server.address() as AddressInfo;
       const scheme = address.port === 443 ? "https" : "http";
       const url = `${scheme}://${address.address}:${address.port}/`;
-      wrapUp(url);
+      context.browse(url);
     });
   };
 });

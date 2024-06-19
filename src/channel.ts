@@ -16,6 +16,7 @@ export class MessagePort<T extends object = any> extends EventEmitter {
   private readonly _rpc: RPC;
   constructor(readonly id = uniqueId(), readonly context = getContext()) {
     super();
+    this.setMaxListeners(0); // fixme
     this.id = (id || uniqueId()).replace(new RegExp(`^${PREFIX}:`), "");
     this._rpc = new RPC({
       serviceId: this.id,

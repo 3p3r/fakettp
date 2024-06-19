@@ -6,8 +6,10 @@ import assert from "assert";
 import { RPC } from "@mixer/postmessage-rpc";
 import { backOff } from "exponential-backoff";
 import { EventEmitter } from "events";
+// @ts-expect-error
+import beforeunloadRequest from "beforeunload-request";
 
-import { type FullConfig, type PartConfig, getConfigFromLocation } from "./common";
+import { type FullConfig, type PartConfig, getConfigFromLocation, isDebugEnabled } from "./common";
 
 const log = debug("fakettp:context");
 
@@ -25,6 +27,7 @@ export class RemoteContext implements Context {
   private readonly _emitter = new EventEmitter();
 
   constructor(readonly rpc: RPC) {
+    this._emitter.setMaxListeners(0); // fixme
     this.rpc.expose("message", ({ message }: { message: any }) => {
       this._emitter.emit("message", message);
     });
@@ -55,10 +58,10 @@ export class RemoteContext implements Context {
     await this.rpc.call("unload", {}, true);
   }
 
-  async navigate(url: string) {
-    log("navigating to %s via remote context", url);
+  async browse(url: string) {
+    log("browsing to %s via remote context", url);
     await this.rpc.isReady;
-    await this.rpc.call("navigate", { url }, true);
+    await this.rpc.call("browse", { url }, true);
   }
 }
 
@@ -121,6 +124,7 @@ export class WindowContext implements Context {
       await this.unloadWorker();
     }
     const query = new URLSearchParams();
+    if (isDebugEnabled()) query.append("d", "");
     this._config.include.forEach((i) => query.append("i", i));
     this._config.exclude.forEach((e) => query.append("e", e));
     const queryString = query.toString();
@@ -130,6 +134,7 @@ export class WindowContext implements Context {
     await this._waitForWorkerLoad();
     const reg = await navigator.serviceWorker.ready;
     this._worker = reg.active;
+    globalThis.addEventListener("beforeunload", this._selfDestruct);
   }
 
   async unloadWorker() {
@@ -140,7 +145,17 @@ export class WindowContext implements Context {
     await this._waitForControllerChange();
     await this._waitForWorkerStop();
     this._worker = null;
+    globalThis.removeEventListener("beforeunload", this._selfDestruct);
   }
+
+  private _selfDestruct = (ev: BeforeUnloadEvent) => {
+    log("attempting to unload worker via proxy window");
+    const success = beforeunloadRequest("/__self_destruct__");
+    if (!success) {
+      ev.preventDefault();
+      ev.returnValue = "";
+    }
+  };
 
   private async _waitForControllerChange() {
     if (navigator.serviceWorker.controller) return;

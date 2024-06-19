@@ -26,6 +26,8 @@ const SEARCH_VALUE = "polling";
 const SEARCH_PARAM = "transport";
 const SOCKET_TIMEOUT = 120000; // 2 minutes
 
+emitter.setMaxListeners(0); // fixme
+
 function isLongPolling(url: URL) {
   return url.searchParams.has(SEARCH_PARAM) && url.searchParams.get(SEARCH_PARAM) === SEARCH_VALUE;
 }
@@ -62,6 +64,18 @@ async function onFetch(this: Listeners, ev: FetchEvent) {
     log("request is a status check: %s", ev.request.url);
     return ev.respondWith(new Response("OK"));
   }
+  if (ev.request.url.endsWith("/__self_destruct__")) {
+    log("request is a self destruct: %s", ev.request.url);
+    emitter.emit("self-destruct");
+    await globalThis.registration.unregister();
+    emitter.removeAllListeners();
+    this.clear();
+    globalThis.removeEventListener("fetch", onFetch);
+    globalThis.removeEventListener("message", onMessage);
+    globalThis.removeEventListener("install", onInstall);
+    globalThis.removeEventListener("activate", onActivate);
+    return ev.respondWith(new Response("OK"));
+  }
   log("processing fetch event: %s", ev.request.url);
   const requestUrl = new URL(ev.request.url);
   const config = getConfig();
@@ -71,6 +85,7 @@ async function onFetch(this: Listeners, ev: FetchEvent) {
     log("bypassing '%s' include: %o, exclude: %o config: %o", ev.request.url, include, exclude, config);
     return _bypass();
   }
+  let abortedResponse: () => void | null = null;
   let timeoutResponse: NodeJS.Timeout | null = null;
   const eventId = uniqueId();
   const work = getClients().then((clients) =>
@@ -131,7 +146,26 @@ async function onFetch(this: Listeners, ev: FetchEvent) {
           }, SOCKET_TIMEOUT);
         }
       }),
-    ])
+      new Promise<Response>((resolve) => {
+        abortedResponse = () => {
+          resolve(
+            new Response(null, {
+              statusText: "Service Unavailable",
+              status: 503,
+            })
+          );
+        };
+        emitter.once("self-destruct", abortedResponse);
+      }),
+    ]).finally(() => {
+      if (timeoutResponse) {
+        clearTimeout(timeoutResponse);
+        timeoutResponse = null;
+      }
+      if (abortedResponse) {
+        emitter.off("self-destruct", abortedResponse);
+      }
+    })
   );
 
   ev.respondWith(work);

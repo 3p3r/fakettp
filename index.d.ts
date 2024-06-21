@@ -34,7 +34,6 @@ declare module "fakettp" {
   export class RPC {
     readonly isReady: Promise<void>;
     constructor(options: RPCOptions);
-    create(options: RPCOptions): Promise<RPC>;
     expose<T>(method: string, handler: (params: T) => Promise<any> | any): this;
     call<T>(method: string, params?: object, waitForReply?: true): Promise<T>;
     call(method: string, params?: object, waitForReply?: false): void;

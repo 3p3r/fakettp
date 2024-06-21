@@ -45,6 +45,7 @@ declare module "fakettp" {
     readMessages(callback: MessageReceiver): CleanupReceiver;
     reloadWorker(): Promise<void>;
     unloadWorker(): Promise<void>;
+    browse(url: string): Promise<void>;
   }
   export class IFrameContext extends RemoteContext {
     constructor(frame: HTMLIFrameElement);

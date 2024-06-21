@@ -22,7 +22,7 @@ export function isRunningInServiceWindow() {
 }
 
 export function getServiceId() {
-  const url = new URL(isRunningInServiceWindow() ? globalThis.location.href : "http://localhost");
+  const url = new URL(isRunningInServiceWindow() ? globalThis.location.href : "http://localhost/fakettp.html");
   return `fakettp:${url.href}`;
 }
 

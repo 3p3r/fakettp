@@ -6,8 +6,6 @@ import assert from "assert";
 import { RPC } from "@mixer/postmessage-rpc";
 import { backOff } from "exponential-backoff";
 import { EventEmitter } from "events";
-// @ts-expect-error
-import beforeunloadRequest from "beforeunload-request";
 
 import { type FullConfig, type PartConfig, getConfigFromLocation, isDebugEnabled } from "./common";
 
@@ -150,6 +148,7 @@ export class WindowContext implements Context {
 
   private _selfDestruct = (ev: BeforeUnloadEvent) => {
     log("attempting to unload worker via proxy window");
+    const beforeunloadRequest = require("beforeunload-request");
     const success = beforeunloadRequest("/__self_destruct__");
     if (!success) {
       ev.preventDefault();

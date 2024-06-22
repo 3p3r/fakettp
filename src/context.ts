@@ -24,7 +24,7 @@ export interface Context {
 export class RemoteContext implements Context {
   private readonly _emitter = new EventEmitter();
 
-  constructor(readonly rpc: RPC) {
+  constructor(protected readonly rpc: RPC) {
     this._emitter.setMaxListeners(0); // fixme
     this.rpc.expose("message", ({ message }: { message: any }) => {
       this._emitter.emit("message", message);
@@ -76,7 +76,11 @@ export class IFrameContext extends RemoteContext {
     super(
       new RPC({
         serviceId,
-        target: frame.contentWindow,
+        target: {
+          postMessage: (message) => {
+            frame.contentWindow?.postMessage(message, "*");
+          },
+        },
         receiver: {
           readMessages: (cb) => {
             const _cb = ({ data }: MessageEvent) => cb(data);

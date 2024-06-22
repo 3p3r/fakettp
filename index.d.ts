@@ -40,6 +40,7 @@ declare module "fakettp" {
     destroy(): void;
   }
   export class RemoteContext implements Context {
+    protected readonly rpc: RPC;
     constructor(rpc: RPC);
     postMessage(message: any): void;
     readMessages(callback: MessageReceiver): CleanupReceiver;

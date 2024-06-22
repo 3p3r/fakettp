@@ -6,7 +6,8 @@ import { MessageChannel, MessagePort } from "./channel";
 const LOG = debug("fakettp:common");
 const log = (patt: string, ...args: any[]) => LOG(`[${threadId()}] ${patt}`, ...args);
 
-export const FIN = "\x00" as const;
+export const FIN = "__FAKETTP__FIN__PACKET__" as const;
+export const FIN_BYTES = new TextEncoder().encode(FIN);
 
 export function isRunningInServiceWorker() {
   return typeof globalThis !== "undefined" && "ServiceWorkerGlobalScope" in globalThis;
@@ -28,14 +29,19 @@ export function getServiceId() {
 
 export type StringOrBuffer = string | ArrayBufferView;
 
-export function StringOrBufferToBuffer(input: StringOrBuffer) {
-  if (typeof input === "string") return new TextEncoder().encode(input);
+function StringOrBufferToBuffer(input: StringOrBuffer) {
   if (ArrayBuffer.isView(input)) return input;
+  return new TextEncoder().encode(input.toString());
 }
 
-export function StringOrBufferToString(input: StringOrBuffer) {
-  if (typeof input === "string") return input;
+function StringOrBufferToString(input: StringOrBuffer) {
   if (ArrayBuffer.isView(input)) return new TextDecoder().decode(input);
+  return input.toString();
+}
+
+function isFIN(input: any): input is typeof FIN {
+  log("checking if input is FIN: %o", input);
+  return input == FIN || StringOrBufferToString(input) === FIN;
 }
 
 export const uniqueId = () => uuid();
@@ -45,8 +51,8 @@ export function MessagePortToReadableStream(port: MessagePort): ReadableStream<A
   log("creating readable stream from message port: %s", portId);
   let controller: ReadableStreamController<ArrayBufferView> | null = null;
   port.onmessage = function (data: StringOrBuffer | typeof FIN) {
-    log("message received from message port: %s", portId);
-    if (StringOrBufferToString(data) === FIN) {
+    log("message received from message port: %s", portId, data);
+    if (isFIN(data)) {
       log("fin received from message port for readable stream: %s", portId);
       try {
         controller?.close();
@@ -85,7 +91,7 @@ export function ReadableStreamToMessagePort(stream: ReadableStream<StringOrBuffe
       close() {
         log("fin received from stream for message port: %s", portId);
         port.postMessage(FIN);
-        channel.port1.close();
+        port.close();
       },
     })
   );
@@ -186,9 +192,9 @@ export function normalizedPort(url: URL) {
 }
 
 export function defaultUrl() {
-  if (typeof globalThis !== "undefined" && "location" in globalThis) {
+  try {
     return new URL(globalThis.location.href);
-  } else {
+  } catch {
     log("defaultURL: globalThis.location not found.");
     return new URL("http://localhost");
   }

@@ -16,7 +16,11 @@ async function _installProxyWindow() {
   log("installing proxy window with service id: %s", serviceId);
   const rpc = new RPC({
     serviceId,
-    target: globalThis.parent,
+    target: {
+      postMessage: (message) => {
+        globalThis.parent?.postMessage(message, "*");
+      },
+    },
     receiver: {
       readMessages: (cb) => {
         const _cb = ({ data }: MessageEvent) => cb(data);

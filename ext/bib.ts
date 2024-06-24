@@ -1,8 +1,8 @@
 // BIB: Browser In Browser.
-export async function createBib(initialUrl: string) {
+export async function createBib(initialUrl: string): Promise<HTMLIFrameElement> {
   const html = `\
 <div id="bib">
-  <iframe id="bib-frame" sandbox="allow-same-origin" seamless></iframe>
+  <iframe id="bib-frame" sandbox="allow-scripts allow-same-origin allow-modals" seamless></iframe>
   <input id="bib-url" />
 </div>`;
   const parser = new DOMParser();
@@ -54,4 +54,5 @@ export async function createBib(initialUrl: string) {
   frame.addEventListener("error", (err) => {
     frame.srcdoc = err.message;
   });
+  return frame;
 }

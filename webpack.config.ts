@@ -1,10 +1,11 @@
 import fs from "fs";
 import path from "path";
-import webpack, { ProvidePlugin } from "webpack";
+import webpack from "webpack";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 import CopyWebpackPlugin from "copy-webpack-plugin";
 import TerserWebpackPlugin from "terser-webpack-plugin";
 import WebpackShellPlugin from "webpack-shell-plugin-next";
+import { globSync } from "glob";
 
 import "webpack-dev-server";
 
@@ -33,8 +34,18 @@ const mainConfig: webpack.Configuration = {
     static: DIST,
   },
   plugins: [
-    new ProvidePlugin({
+    new webpack.ProvidePlugin({
       process: "process/browser",
+    }),
+    new HtmlWebpackPlugin({
+      filename: "fakettp.html",
+      template: "./src/frame.html",
+      minify: {
+        html5: true,
+        minifyCSS: true,
+        minifyJS: false,
+        collapseWhitespace: true,
+      },
     }),
     new CopyWebpackPlugin({
       patterns: [
@@ -46,8 +57,8 @@ const mainConfig: webpack.Configuration = {
             delete pkg.private;
             delete pkg.scripts;
             delete pkg.devDependencies;
-            pkg.main = "build/index.js";
-            pkg.files = ["LICENSE", "README.md", mainConfig.output?.filename, noswConfig.output?.filename, "build"];
+            pkg.main = "./fakettp.js";
+            pkg.files = ["LICENSE", "README.md", "index.d.ts", "fakettp.js", "fakettp.html", "nosw.js"];
             return JSON.stringify(pkg, null, 2);
           },
         },
@@ -57,6 +68,10 @@ const mainConfig: webpack.Configuration = {
         },
         {
           from: "LICENSE",
+          to: DIST,
+        },
+        {
+          from: "index.d.ts",
           to: DIST,
         },
       ],
@@ -96,13 +111,6 @@ const mainConfig: webpack.Configuration = {
     ],
   },
 };
-
-mainConfig.plugins?.push(
-  new webpack.DefinePlugin({
-    "process.env.FAKETTP_MODE": JSON.stringify(mainConfig.mode),
-    "process.env.FAKETTP_MAIN": JSON.stringify(mainConfig.output?.filename),
-  })
-);
 
 if (mainConfig.mode === "development") {
   mainConfig.devtool = "inline-source-map";
@@ -228,9 +236,12 @@ function makeTemplateIndexContent(...names: string[]) {
     <h2 style="color:red">for best results, view this page in Chrome and in incognito mode.</h2>
     <p>Examples:</p>
     <ul>
-${names.map((name) => `      <li><a href="sample-${name}.html">${name}</a></li>`).join("\n")}
+      ${names.map((name) => `<li><a href="sample-${name}.html">${name}</a></li>`).join("\n")}
     </ul>
   </body>
+  <script>
+    localStorage.debug = '*';
+  </script>
 </html>\n`;
 }
 
@@ -258,4 +269,8 @@ function createConfigForExamples(...names: string[]) {
   return configs;
 }
 
-export default [mainConfig, noswConfig, ...createConfigForExamples("express", "express-static", "socket-io")];
+export default [
+  mainConfig,
+  noswConfig,
+  ...createConfigForExamples(...globSync("ext/samples/*.ts").map((f) => path.basename(f, ".ts"))),
+];

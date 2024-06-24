@@ -22,6 +22,9 @@ describe("http.Server", () => {
       window.server = server;
     });
     await expect(browser.execute(() => fetch("https://example.com").then(({ ok }) => ok))).resolves.toBe(true);
+    await expect(browser.execute(() => fetch("https://example.com").then((res) => res.text()))).resolves.toBe(
+      "hello world"
+    );
     await expect(browser.executeAsync((done) => window.server.close(done))).resolves.toBeNull();
     await expect(
       browser.execute(() =>
@@ -44,7 +47,6 @@ describe("http.Server", () => {
             req.on("data", (chunk) => {
               reqBody += chunk.toString();
             });
-            req.on("end", () => {});
             res.writeHead(200, { "Content-Type": "text/plain" });
             res.end('{"yo":"nice"}');
           })

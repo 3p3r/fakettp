@@ -1,36 +1,36 @@
 import debug from "debug";
 
-import { createProxyClient } from "./sw";
-import { isRunningInBrowserWindow, isRunningInServiceWorker } from "./common";
-import { createProxyServer, IncomingMessage, ServerResponse, unload } from "./mt";
+import { installProxyWorker } from "./sw";
+import { installProxyWindow } from "./frame";
+import { createProxyServer, IncomingMessage, ServerResponse } from "./mt";
+import { isRunningInServiceWorker, isRunningInServiceWindow, isDebugEnabled } from "./common";
+import { getContext, setContext, WindowContext, RemoteContext, IFrameContext } from "./context";
 
+import { RPC } from "@mixer/postmessage-rpc";
 import type { RequestListener } from "http";
 
-const log = debug("fakettp");
-const _http = (() => {
-  try {
-    return require("stream-http");
-  } catch (_) {
-    return {};
-  }
-})();
+if (isDebugEnabled()) debug.enable("*");
 
-log("built with webpack mode: %s", process.env.FAKETTP_MODE);
-log("webpack bundle filename: %s", process.env.FAKETTP_MAIN);
-
-if (isRunningInServiceWorker()) createProxyClient();
+if (isRunningInServiceWorker()) installProxyWorker();
+if (isRunningInServiceWindow()) installProxyWindow();
 
 const http = {
-  ..._http,
-  unload,
+  ...require("stream-http"),
+  RPC,
+  getContext,
+  setContext,
+  IFrameContext,
+  WindowContext,
+  RemoteContext,
   ServerResponse,
   IncomingMessage,
-  createServer: isRunningInBrowserWindow()
-    ? (...args: any[]) => {
-      const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
-      return createProxyServer(requestListener);
-    }
-    : undefined,
+  createServer:
+    !isRunningInServiceWorker() && !isRunningInServiceWindow()
+      ? (...args: any[]) => {
+          const requestListener = args.find((arg) => typeof arg === "function") as RequestListener;
+          return createProxyServer(requestListener);
+        }
+      : undefined,
   __esModule: true,
 };
 

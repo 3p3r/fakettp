@@ -3,7 +3,7 @@
 
 import debug from "debug";
 import assert from "assert";
-import { RPC } from "@mixer/postmessage-rpc";
+import { RPC } from "justmessage-rpc";
 import { backOff } from "exponential-backoff";
 import { EventEmitter } from "events";
 
@@ -16,7 +16,7 @@ type MessageReceiver = (message: any) => void | Promise<void>;
 
 export interface Context {
   readonly postMessage: MessageReceiver;
-  readonly readMessages: (callback: MessageReceiver) => CleanupReceiver;
+  readonly recvMessage: (callback: MessageReceiver) => CleanupReceiver;
   readonly reloadWorker?: () => void | Promise<void>;
   readonly unloadWorker?: () => void | Promise<void>;
 }
@@ -37,7 +37,7 @@ export class RemoteContext implements Context {
     await this.rpc.call("message", { message }, true);
   }
 
-  readMessages(callback: MessageReceiver) {
+  recvMessage(callback: MessageReceiver) {
     this._emitter.on("message", callback);
     return () => {
       this._emitter.off("message", callback);
@@ -82,7 +82,7 @@ export class IFrameContext extends RemoteContext {
           },
         },
         receiver: {
-          readMessages: (cb) => {
+          recvMessage: (cb) => {
             const _cb = ({ data }: MessageEvent) => cb(data);
             getReferencedWindow(frame)?.addEventListener("message", _cb);
             return () => {
@@ -111,7 +111,7 @@ export class WindowContext implements Context {
     this._worker?.postMessage(message);
   }
 
-  readMessages(callback: MessageReceiver) {
+  recvMessage(callback: MessageReceiver) {
     const cb = (event: MessageEvent) => {
       callback(event.data);
     };

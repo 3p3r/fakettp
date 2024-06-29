@@ -6,7 +6,7 @@ class SubProcessContext implements Context {
     assert.ok(process.send);
     process.send(message);
   };
-  readMessages = (cb: any) => {
+  recvMessage = (cb: any) => {
     process.on("message", cb);
     return () => {
       process.off("message", cb);

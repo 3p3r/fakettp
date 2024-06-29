@@ -2,7 +2,7 @@ import debug from "debug";
 import assert from "assert";
 import traverse from "traverse";
 import { EventEmitter } from "events";
-import { RPC } from "@mixer/postmessage-rpc";
+import { RPC } from "justmessage-rpc";
 import { uniqueId, threadId, timedPromise } from "./common";
 import { getContext } from "./context";
 

@@ -4,7 +4,7 @@ declare module "fakettp" {
   type MessageReceiver = (message: any) => void | Promise<void>;
   export interface Context {
     readonly postMessage: MessageReceiver;
-    readonly readMessages: (callback: MessageReceiver) => CleanupReceiver;
+    readonly recvMessage: (callback: MessageReceiver) => CleanupReceiver;
     readonly reloadWorker?: () => void | Promise<void>;
     readonly unloadWorker?: () => void | Promise<void>;
   }
@@ -13,7 +13,7 @@ declare module "fakettp" {
   export class WindowContext implements Context {
     constructor(config?: { include?: RegExp[]; exclude?: RegExp[] });
     postMessage(message: any): void;
-    readMessages(callback: MessageReceiver): CleanupReceiver;
+    recvMessage(callback: MessageReceiver): CleanupReceiver;
     reloadWorker(): Promise<void>;
     unloadWorker(): Promise<void>;
   }
@@ -24,7 +24,7 @@ declare module "fakettp" {
     postMessage(data: any): void;
   }
   export interface Receivable {
-    readMessages(callback: (ev: MessageEvent) => void): () => void;
+    recvMessage(callback: (ev: MessageEvent) => void): () => void;
   }
   export interface RPCOptions {
     target: Postable;
@@ -43,7 +43,7 @@ declare module "fakettp" {
     protected readonly rpc: RPC;
     constructor(rpc: RPC);
     postMessage(message: any): void;
-    readMessages(callback: MessageReceiver): CleanupReceiver;
+    recvMessage(callback: MessageReceiver): CleanupReceiver;
     reloadWorker(): Promise<void>;
     unloadWorker(): Promise<void>;
     browse(url: string): Promise<void>;

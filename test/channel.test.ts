@@ -13,7 +13,7 @@ class SameThreadContext implements Context {
   postMessage(message: any) {
     this.emitter.emit("message", message);
   }
-  readMessages(cb: (message: any) => void | Promise<void>) {
+  recvMessage(cb: (message: any) => void | Promise<void>) {
     this.emitter.on("message", cb);
     return () => {
       this.emitter.off("message", cb);
@@ -28,7 +28,7 @@ class SubProcessContext implements Context {
   postMessage(message: any) {
     this.child.send(message);
   }
-  readMessages(cb: (message: any) => void | Promise<void>) {
+  recvMessage(cb: (message: any) => void | Promise<void>) {
     this.child.on("message", cb);
     return () => {
       this.child.off("message", cb);

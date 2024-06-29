@@ -6,7 +6,7 @@ import { createProxyServer, IncomingMessage, ServerResponse } from "./mt";
 import { isRunningInServiceWorker, isRunningInServiceWindow, isDebugEnabled } from "./common";
 import { getContext, setContext, WindowContext, RemoteContext, IFrameContext } from "./context";
 
-import { RPC } from "@mixer/postmessage-rpc";
+import { RPC } from "justmessage-rpc";
 import type { RequestListener } from "http";
 
 if (isDebugEnabled()) debug.enable("*");

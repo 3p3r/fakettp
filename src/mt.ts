@@ -323,7 +323,7 @@ class Server extends EventEmitter {
             unload();
           });
           this.emit("listening");
-          this._dispose = ctx.readMessages((event: SerializedRequest) => {
+          this._dispose = ctx.recvMessage((event: SerializedRequest) => {
             if (!("id" in event && "body" in event && "url" in event)) return;
             log("message received from service worker: %o", event);
             const responseChannel = new MessageChannel();

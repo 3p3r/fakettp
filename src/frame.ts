@@ -2,7 +2,7 @@ declare const globalThis: Window;
 
 import debug from "debug";
 import assert from "assert";
-import { RPC } from "@mixer/postmessage-rpc";
+import { RPC } from "justmessage-rpc";
 
 import { WindowContext } from "../src/context";
 import { getServiceId, isDebugEnabled } from "./common";
@@ -22,7 +22,7 @@ async function _installProxyWindow() {
       },
     },
     receiver: {
-      readMessages: (cb) => {
+      recvMessage: (cb) => {
         const _cb = ({ data }: MessageEvent) => cb(data);
         globalThis.addEventListener("message", _cb);
         return () => {
@@ -72,7 +72,7 @@ async function _installProxyWindow() {
     ctx.postMessage(message);
   });
   log("forwarding messages to the remote side");
-  ctx.readMessages(async (message) => {
+  ctx.recvMessage(async (message) => {
     await rpc.isReady;
     await rpc.call("message", { message }, true);
   });

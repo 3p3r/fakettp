@@ -41,7 +41,7 @@ class WindowClientContext implements Context {
   postMessage(message: any) {
     this.client.postMessage(message);
   }
-  readMessages(callback: any) {
+  recvMessage(callback: any) {
     emitter.on("message", callback);
     return () => {
       emitter.off("message", callback);
@@ -229,7 +229,7 @@ export function installProxyWorker() {
         });
       });
     },
-    readMessages: (cb) => {
+    recvMessage: (cb) => {
       emitter.on("message", cb);
       return () => {
         emitter.off("message", cb);
